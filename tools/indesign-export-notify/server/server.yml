@@ -1,0 +1,31 @@
+# ntfy server config for the export PC.
+# Copy to C:\ProgramData\ntfy\server.yml and replace every CHANGE-ME (see SETUP.md).
+
+# The address staff type into their browser. Must match the HTTPS certificate.
+base-url: "https://CHANGE-ME-export-pc"
+
+# HTTPS for staff browsers (browser notifications only work over trusted HTTPS).
+listen-https: ":443"
+cert-file: "C:\\ProgramData\\ntfy\\certs\\ntfy.pem"
+key-file: "C:\\ProgramData\\ntfy\\certs\\ntfy-key.pem"
+
+# Plain HTTP only on this PC, for the InDesign script. Not reachable from the network.
+listen-http: "127.0.0.1:2586"
+
+# Keep message history across restarts (shown in the web app).
+cache-file: "C:\\ProgramData\\ntfy\\cache.db"
+cache-duration: "168h"
+
+# Private server: nobody can read or send without logging in.
+auth-file: "C:\\ProgramData\\ntfy\\user.db"
+auth-default-access: "deny-all"
+enable-login: true
+require-login: true
+enable-signup: false
+
+# Background browser notifications (work with the ntfy tab closed).
+# Generate the two keys with:  ntfy webpush keys
+web-push-public-key: "CHANGE-ME"
+web-push-private-key: "CHANGE-ME"
+web-push-file: "C:\\ProgramData\\ntfy\\webpush.db"
+web-push-email-address: "CHANGE-ME@your-agency.com"

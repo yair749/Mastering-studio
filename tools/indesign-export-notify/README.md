@@ -1,32 +1,34 @@
 # InDesign export notifier
 
-Get a push notification on your phone or desktop when an InDesign export finishes on the export PC.
+Get a browser notification when an InDesign export finishes on the export PC. Staff open **https://export-pc** in Chrome or Edge, log in, and get a desktop pop-up (even with the tab closed) plus a history of recent exports.
 
-No new app to build or maintain. This is about 150 lines of glue between two things that already exist:
+No new app to build or maintain. This is about 150 lines of glue between things that already exist:
 
 | Piece | What it does | Why it was chosen |
 |---|---|---|
 | InDesign scripting `afterExport` event | Built into InDesign. Fires when an export happens. | Free, no third-party code |
-| [ntfy](https://github.com/binwiederhier/ntfy) (34k★) | Push notifications over plain HTTP. Has Android, iOS and web/desktop apps. | Free, open source, self-hostable |
-| `curl` | Sends the HTTP request | Ships with Windows 10 1803+ and macOS |
+| [ntfy](https://github.com/binwiederhier/ntfy) (34k★) | Notification server with a web app. Self-hosted on the export PC as a Windows service. | Free, open source, web-based |
+| [mkcert](https://github.com/FiloSottile/mkcert) (59k★) | HTTPS certificate for the office network | Browsers only allow notifications over HTTPS |
+| `curl` | Sends the notification from InDesign to ntfy | Ships with Windows 10 1803+ and macOS |
 
 No existing project with 1000+ stars does "notify when InDesign export is done". The search came back empty, so this glue is the minimum.
 
-## Setup (about 10 minutes)
+## Files
 
-1. **Pick a topic name.** On the public ntfy.sh server, anyone who knows the topic can read it, so use a long random name, for example `agency-export-7f3k9q2m8x`. For more privacy, self-host ntfy (see *Security* below).
-2. **Test from the export PC first.** In PowerShell:
-   ```powershell
-   curl.exe -H "Title: test" -d "hello from the export PC" https://ntfy.sh/agency-export-7f3k9q2m8x
-   ```
-3. **Subscribe.** Install the ntfy app (Google Play, F-Droid or App Store), or open `https://ntfy.sh/app` in a browser, and subscribe to the same topic. Run the test again; you should get the notification.
-4. **Edit `export-notify.jsx`.** Set `CONFIG.topic`, and `server`/`token` if you self-host.
-5. **Install the script.** Copy it into InDesign's startup scripts folder:
+- `export-notify.jsx`: the InDesign startup script.
+- `server/SETUP.md`: step-by-step self-hosting guide for the export PC. **Start here.**
+- `server/server.yml`: ntfy config template (private, login required, browser push enabled).
+
+## Setup
+
+1. Set up the server: follow [`server/SETUP.md`](server/SETUP.md). It ends with a `tk_...` token.
+2. In `export-notify.jsx`, set `token` to that token. `server` and `topic` are already set for the self-hosted setup.
+3. Copy `export-notify.jsx` into InDesign's startup scripts folder on the export PC:
    ```
    %APPDATA%\Adobe\InDesign\<Version>\<locale>\Scripts\startup scripts\
    ```
    (for example `...\InDesign\Version 20.0\en_US\Scripts\startup scripts\`). Create `startup scripts` if it doesn't exist. Restart InDesign.
-6. Export something. You get "InDesign export finished" with the file name(s).
+4. Export something. Everyone subscribed gets "InDesign export finished" with the file name(s).
 
 ## Behaviour
 
@@ -37,6 +39,18 @@ No existing project with 1000+ stars does "notify when InDesign export is done".
 
 ## Security
 
-- The script only reads the exported file's name and existence, and sends one HTTPS request with curl. Read it before installing; it is short.
-- Filenames are sent to the ntfy server. If client names in filenames are confidential, **self-host ntfy** (single binary or Docker, see the ntfy docs) with access control. Then put your server URL in `server` and a token in `token`.
-- Per our policy, put the ntfy server / app through the sandbox security checks before installing it.
+- Everything stays on the office network. The server rejects anyone who isn't logged in. Staff can only read notifications; the InDesign script's token can only send them.
+- The script's HTTP port (2586) listens only on the export PC itself. Staff connect over HTTPS.
+- The script only reads the exported file's name and whether it exists, then sends one request with curl. Read it before installing; it is short.
+- Per our policy, put ntfy and mkcert through the sandbox security checks before installing them (`server/SETUP.md` step 0).
+
+## Tested
+
+The server side was tested on Linux with the official ntfy v2.28.0 release (checksum verified) and mkcert v1.4.4, using this `server.yml` with only the paths changed:
+
+- Anonymous send and read are refused (403). A wrong password is refused (401).
+- The staff login can read but not send. The script token can send but not read.
+- The exact request the `.jsx` builds is accepted, and the Hebrew filename in it comes through intact.
+- The web app requires a login, shows the messages live, and serves the web-push key.
+
+**Not tested yet:** the `.jsx` inside a real InDesign, and the Windows service and certificate steps. There was no Windows or InDesign machine available. Do the first run on the export PC with `ntfy serve` in a window (SETUP.md step 6) so any problem shows on screen.

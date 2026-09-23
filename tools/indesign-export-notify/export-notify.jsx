@@ -12,9 +12,9 @@
  */
 
 var CONFIG = {
-    server: "https://ntfy.sh",                 // or your self-hosted ntfy URL
-    topic: "CHANGE-ME-long-random-topic-name", // anyone who knows the topic can read it
-    token: "",                                 // ntfy access token (tk_...) if the server needs auth
+    server: "http://127.0.0.1:2586",           // self-hosted ntfy on this PC (server/SETUP.md)
+    topic: "exports",
+    token: "CHANGE-ME",                        // tk_... token from SETUP.md step 5
     pollSeconds: 5,                            // how often to check background exports
     timeoutHours: 8,                           // give up waiting after this long
     label: ""                                  // name shown in the message; blank = computer name
