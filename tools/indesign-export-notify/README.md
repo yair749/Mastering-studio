@@ -18,8 +18,8 @@ The installer:
 
 Already installed an earlier version? Just run `Install.cmd` again. It keeps the same link.
 
-**Staff**
-Send them the "Export notifications" link plus [`STAFF.md`](STAFF.md). They open the link, click **Allow**, then **Install**.
+**Staff computers: once each, then nothing for staff to do**
+The installer also puts a folder **"Export notifications - staff PC setup"** on the export PC's desktop, with your channel already filled in. Copy it to each staff computer and double-click `Install.cmd` in it. From then on, a normal Windows notification appears when an export finishes: no browser, and nothing to open. See [`STAFF.md`](STAFF.md). Phones and browsers still work with the link, if anyone wants them.
 
 ## What it does
 
@@ -29,7 +29,12 @@ Send them the "Export notifications" link plus [`STAFF.md`](STAFF.md). They open
 - **Cancelled or failed exports**, including a failed export over an existing file of the same name: a "needs a look" warning instead.
 - **Internet down:** keeps retrying for about 15 minutes. If it still can't send, it keeps the message and delivers it, marked "(Delayed)", with the next successful notification.
 - **InDesign upgrades:** a daily self-check (09:00, or at the next start-up) installs the notifier into any new InDesign version by itself.
-- **Remove it:** double-click `Uninstall.cmd`.
+- **Staff computers** (the receiver in `receiver/`):
+  - starts silently at every login
+  - keeps a connection open
+  - after sleep or an outage, catches up on anything missed in the last 12 hours
+  - says "can't connect" after 10 minutes without internet, and "reconnected" when it's back
+- **Remove it:** double-click `Uninstall.cmd` (on the export PC, or in the staff setup folder on a staff computer).
 
 ## Knowing it works
 
@@ -47,6 +52,7 @@ If these stop coming, something is wrong. Look at `%APPDATA%\InDesignExportNotif
 | InDesign's built-in scripting (`beforeExport` / `afterExport` events) | Knows when an export happens (`export-notify.jsx`) |
 | [ntfy](https://github.com/binwiederhier/ntfy), 34k★, free hosted service at ntfy.sh | Delivers the notifications and provides the staff web app |
 | PowerShell and Task Scheduler (built into Windows) | Sending with retries (`send-notification.ps1`), install and daily self-check (`Install-ExportNotify.ps1`) |
+| PowerShell and Windows notifications (built into Windows) | The staff-computer receiver (`receiver/export-receiver.ps1`). ntfy's own Windows program can't show notifications without an extra tool that doesn't meet our 1000-star rule |
 
 Where things live on the export PC: `%APPDATA%\InDesignExportNotify\` holds the settings (`settings.txt`), a copy of the notifier (`app\`), messages waiting to be sent (`outbox\`) and the log.
 
@@ -65,9 +71,9 @@ Where things live on the export PC: `%APPDATA%\InDesignExportNotify\` holds the 
 | Installer says InDesign folder not found | Open InDesign once on this Windows account, close it, run `Install.cmd` again |
 | "Couldn't reach ntfy.sh" | The export PC needs internet access to `ntfy.sh`; details are in `notifier.log` |
 | "Couldn't schedule the daily self-check" | Everything else works; re-run `Install.cmd` after InDesign upgrades |
-| Staff get nothing | They must click **Allow**; check Windows **Settings → Notifications** allows Chrome/Edge |
-| Only works while the browser tab is open | They skipped **Install** in step 3 of STAFF.md |
-| Want a new link (e.g. it leaked) | Delete the `topic=` line from `%APPDATA%\InDesignExportNotify\settings.txt`, run `Install.cmd` again, send staff the new link |
+| A staff computer gets nothing | Check Windows **Settings → System → Notifications** is on and Do not disturb/Focus is off; see `%APPDATA%\ExportReceiver\receiver.log` on that computer; re-run `Install.cmd` from the staff setup folder |
+| Browser users: only works while the tab is open | They skipped **Install** in the browser (see STAFF.md) |
+| Want a new link (e.g. it leaked) | Delete the `topic=` line from `%APPDATA%\InDesignExportNotify\settings.txt`, run `Install.cmd` again, copy the new "staff PC setup" folder to each staff computer and run its `Install.cmd` again |
 
 ## Known limits
 
@@ -76,7 +82,11 @@ Where things live on the export PC: `%APPDATA%\InDesignExportNotify\` holds the 
 - **It depends on ntfy.sh being up** (limit: 250 messages a day from the export PC).
 - **One Windows user:** it only covers the Windows account it was installed on.
 - **Brief window flash:** the daily self-check may flash a window for a moment when it runs.
-- **Weekly pause for staff:** notifications pause if they don't open the app for a week; they get a warning first.
+- **Weekly pause (browser only):** browser notifications pause if the app isn't opened for a week. The Windows receiver has no such pause.
+- **About 30 staff computers per office:** ntfy.sh allows about 30 open connections from one internet address. Beyond that, self-host or use phones/browsers for some people.
+- **"Windows PowerShell" as the sender:** staff-computer notifications show that name as the source.
+- **Do not disturb / Focus mode** hides notifications, like any other app's.
+- **Per Windows user:** the staff receiver is installed per Windows user, so run `Install.cmd` as each person who uses that computer.
 
 ## Tested
 
@@ -96,8 +106,17 @@ Where things live on the export PC: `%APPDATA%\InDesignExportNotify\` holds the 
   - daily check
   - hidden names surviving the daily check
   - uninstall and reinstall
+- **Staff receiver:** real PowerShell against a real ntfy server (`tests/test-receiver.sh`):
+  - live messages, including a Hebrew file name
+  - an accidental second copy (no duplicates)
+  - computer off during exports (caught up, nothing repeated)
+  - ntfy down past the warning time (warning, then "reconnected")
+  - a silently dead connection (detected in 12 seconds)
+  - Windows refusing one pop-up (logged and skipped)
+  - setup, the paste-the-link mode, a bad link, and uninstall
 - **Not tested:**
   - a real InDesign on a real Windows PC
-  - Windows Task Scheduler (not available in the test environment)
+  - Windows Task Scheduler
+  - the actual Windows notification pop-up and the login shortcut (Windows-only; tested with stand-ins)
 
-  Run `Install.cmd` on the export PC and do a test export to confirm.
+  Run `Install.cmd` on the export PC, set up one staff computer, and do a test export to confirm.

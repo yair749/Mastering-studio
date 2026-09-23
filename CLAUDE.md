@@ -14,7 +14,7 @@ The goal is a fail-safe system the owner can just trust. Less complex usually me
 - **Apply reliability fixes proactively.** After any change, list the gaps: ways it could fail silently, miss an event, or give a wrong answer. Fix the ones that are small and low-risk in the same change, without waiting to be asked. Only ask first about fixes that add real complexity, cost money, or change how people use it.
 - **No silent failures.** If something can break, there must be a visible signal (status message, log, warning), or it must repair itself.
 - **Prefer the simplest fix that works.** Don't add servers, accounts, certificates or extra setup steps unless there is no simpler way. Setup for the owner and staff must stay "double-click / open a link".
-- **Test before pushing.** Run `node tools/indesign-export-notify/tests/test-export-notify.js` and test the PowerShell scripts with a real ntfy server whenever they change. Be explicit about what could not be tested (for example: no real InDesign or Windows available).
+- **Test before pushing.** Run `node tools/indesign-export-notify/tests/test-export-notify.js` and `tools/indesign-export-notify/tests/test-receiver.sh <pwsh> <ntfy>`, and test the other PowerShell scripts with a real ntfy server whenever they change. Be explicit about what could not be tested (for example: no real InDesign or Windows available).
 - **Keep existing installs working.** Changes must upgrade cleanly over what is already installed on the export PC, and must keep the existing notification link.
 
 ## Talking to the owner

@@ -201,6 +201,16 @@ $statusLink = "$($settings.server)/$statusTopic"
 [IO.File]::WriteAllText((Join-Path $Desktop "Export notifier status (admin).url"), "[InternetShortcut]`r`nURL=$statusLink`r`n")
 try { Set-Clipboard -Value $link } catch {}
 
+# Ready-to-use setup folder for staff PCs, with this channel filled in. The access token (if any)
+# is deliberately not copied: it allows sending, and staff PCs only need to receive.
+$receiverSource = Join-Path $PSScriptRoot "receiver"
+$staffSetup = Join-Path $Desktop "Export notifications - staff PC setup"
+if (Test-Path $receiverSource) {
+    New-Item -ItemType Directory -Force $staffSetup | Out-Null
+    Copy-Item (Join-Path $receiverSource "*") $staffSetup -Force
+    [IO.File]::WriteAllText((Join-Path $staffSetup "settings.txt"), "server=$($settings.server)`r`ntopic=$($settings.topic)`r`n")
+}
+
 if (-not $NoScheduledTask) {
     try {
         $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument `
@@ -236,3 +246,7 @@ Say "Done. Share this link with staff (it's on your clipboard and on the desktop
 Say "  $link" Cyan
 Say "Your status link (only for you, shows 'Notifier running' / 'Daily check OK'):" Green
 Say "  $statusLink" Cyan
+if (Test-Path $staffSetup) {
+    Say "For staff computers: copy the desktop folder 'Export notifications - staff PC setup' to each" Green
+    Say "computer and double-click Install.cmd in it once. Notifications then just appear." Green
+}
