@@ -12,9 +12,10 @@
  */
 
 var CONFIG = {
-    server: "http://127.0.0.1:2586",           // self-hosted ntfy on this PC (server/SETUP.md)
-    topic: "exports",
-    token: "CHANGE-ME",                        // tk_... token from SETUP.md step 5
+    server: "https://ntfy.sh",                 // free hosted ntfy; or your own server
+    topic: "CHANGE-ME",                        // filled in by Install.cmd (a long random name)
+    token: "",                                 // only needed for a private/self-hosted server
+    showFileNames: true,                       // false = say "2 files" instead of listing names
     pollSeconds: 5,                            // how often to check background exports
     timeoutHours: 8,                           // give up waiting after this long
     label: ""                                  // name shown in the message; blank = computer name
@@ -76,6 +77,7 @@ function onIdle() {
     for (var i = 0; i < pending.length; i++) {
         var p = pending[i];
         var name = p.file ? decodeURI(p.file.name) : "(unknown file)";
+        if (!CONFIG.showFileNames) name = "";
         if (p.file && p.file.exists) ok.push(name); else missing.push(name);
     }
     var mins = Math.round((now - pending[0].start) / 60000);
@@ -83,8 +85,8 @@ function onIdle() {
     stopWaiting();
 
     var lines = [];
-    if (ok.length) lines.push("Done (" + ok.length + "): " + ok.join(", "));
-    if (missing.length) lines.push("Not found - cancelled or failed? (" + missing.length + "): " + missing.join(", "));
+    if (ok.length) lines.push("Done (" + ok.length + ")" + (CONFIG.showFileNames ? ": " + ok.join(", ") : ""));
+    if (missing.length) lines.push("Not found - cancelled or failed? (" + missing.length + ")" + (CONFIG.showFileNames ? ": " + missing.join(", ") : ""));
     if (timedOut) lines.push("Stopped waiting after " + CONFIG.timeoutHours + "h.");
     lines.push("On " + computerName() + (mins ? ", waited ~" + mins + " min after export started." : "."));
 

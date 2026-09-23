@@ -1,4 +1,6 @@
-# Self-hosting ntfy on the export PC (Windows)
+# Optional: self-hosting ntfy on the export PC (Windows)
+
+> Most offices don't need this. The normal setup in the main README uses the free ntfy.sh service and takes 2 minutes. Use this only if file names must never leave the office network.
 
 End result: staff open **https://export-pc** in Chrome or Edge, log in once, and get a desktop pop-up when an export finishes, even with the tab closed. Everything stays on your office network. Nothing is sent to a public server.
 
@@ -89,15 +91,15 @@ Each command asks for a password.
 ```powershell
 ntfy user add --role=admin admin          # you: full access
 ntfy user add studio                      # shared staff login: can only READ exports
-ntfy access studio exports read-only
+ntfy access studio exports-channel-private read-only
 ntfy user add export-pc                   # used only by the InDesign script (any long password)
-ntfy access export-pc exports write-only
+ntfy access export-pc exports-channel-private write-only
 ntfy token add --label "InDesign script" export-pc
 ```
 
 Save the `tk_...` token from the last command for step 8. Treat it like a password.
 
-Want per-person logins instead of a shared one? Repeat the `studio` pair of lines for each person (`ntfy user add dana`, `ntfy access dana exports read-only`). To remove someone: `ntfy user del dana`.
+Want per-person logins instead of a shared one? Repeat the `studio` pair of lines for each person (`ntfy user add dana`, `ntfy access dana exports-channel-private read-only`). To remove someone: `ntfy user del dana`.
 
 ## 6. Test run, then install as a service
 
@@ -124,22 +126,20 @@ If port 443 is already taken on this PC (for example by IIS), use `listen-https:
 ## 7. Test from the export PC
 
 ```powershell
-curl.exe -H "Authorization: Bearer tk_YOUR_TOKEN" -H "Title: test" -d "hello" http://127.0.0.1:2586/exports
+curl.exe -H "Authorization: Bearer tk_YOUR_TOKEN" -H "Title: test" -d "hello" http://127.0.0.1:2586/exports-channel-private
 ```
 
 This should return a line of JSON. A `403` means the token or access rule is wrong.
 
-## 8. Point the InDesign script at it
+## 8. Install the InDesign script
 
-In `export-notify.jsx`:
+From a command prompt in the notifier folder:
 
-```js
-server: "http://127.0.0.1:2586",
-topic: "exports",
-token: "tk_YOUR_TOKEN",
+```
+Install.cmd -Server http://127.0.0.1:2586 -Topic exports-channel-private -Token tk_YOUR_TOKEN
 ```
 
-Then install the script as described in the main README.
+The staff link is `https://export-pc/exports-channel-private`.
 
 ## 9. Each staff computer (about 2 minutes each)
 
@@ -150,7 +150,7 @@ Then install the script as described in the main README.
    On a Mac: `sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain rootCA.pem`.
    If you have a Windows domain, IT can push `rootCA.pem` to every PC with Group Policy instead.
 2. Open **https://export-pc** in Chrome or Edge and log in as `studio`.
-3. Click **Subscribe to topic**, type `exports`, and subscribe.
+3. Click **Subscribe to topic**, type `exports-channel-private`, and subscribe (or just open https://export-pc/exports-channel-private).
 4. Allow notifications when the browser asks.
 5. **Settings → Background notifications → enable.** Without this, pop-ups only arrive while the tab is open.
 6. Optional: in Edge, **⋯ → Apps → Install this site as an app**; in Chrome, the install icon in the address bar. ntfy then works like a normal program in the taskbar.
@@ -171,4 +171,4 @@ Then install the script as described in the main README.
 | "Notifications are blocked" banner in ntfy | Click the padlock → Site settings → Notifications → Allow |
 | No pop-up when the tab is closed | Step 9.5 (Background notifications), and the browser must still be running |
 | `https://export-pc` doesn't load from other PCs | Firewall rule (step 6), or the network doesn't resolve the name; try `https://192.168.1.50` |
-| Script sends nothing, `curl` test returns 403 | Wrong token, or step 5 `ntfy access export-pc exports write-only` missing |
+| Script sends nothing, `curl` test returns 403 | Wrong token, or step 5 `ntfy access export-pc exports-channel-private write-only` missing |
