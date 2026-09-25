@@ -174,3 +174,35 @@ test("preset listing hides temp presets; results with quotes, newlines and Hebre
 test("a missing job file is raised to InDesign (so the bridge reports it) instead of failing silently", () => {
     assert.throws(() => runWorkerScript({ jsxSource: JSX, jobFile: "", presets: PRESETS }), /No job file/);
 });
+
+test("images placed on a Mac are relinked to the export PC's copy; really missing ones stay warnings", async () => {
+    const { buildLinkMappings } = await import("../src/paths.js");
+    const share = fs.mkdtempSync(path.join(os.tmpdir(), "mg-mega-"));
+    fs.mkdirSync(path.join(share, "Client", "Images"), { recursive: true });
+    fs.writeFileSync(path.join(share, "Client", "Images", "hero.psd"), "psd");
+    fs.writeFileSync(path.join(share, "Client", "Images", "logo.ai"), "ai");
+    fs.writeFileSync(path.join(share, "Client", "Images", "photo.jpg"), "jpg");
+    const linkMappings = buildLinkMappings([{ from: "/Volumes/MG_Mega", to: share }], [{ name: "MG_Mega", path: share }]);
+    const documents = (source) => [{
+        path: source,
+        links: [
+            { name: "hero.psd", status: "MISSING", filePath: "/Volumes/MG_Mega/Client/Images/hero.psd" },   // modern Mac path
+            { name: "logo.ai", status: "MISSING", filePath: "MG_Mega:Client:Images:logo.ai" },               // old-style (HFS) Mac path
+            { name: "photo.jpg", status: "MISSING", filePath: "/Volumes/MG_Mega-1/Client/Images/photo.jpg" }, // second mount
+            { name: "gone.tif", status: "MISSING", filePath: "/Volumes/MG_Mega/Client/Images/gone.tif" },    // really missing
+        ],
+    }];
+    const { calls, result } = setup({ linkMappings }, { documents });
+    assert.equal(result.ok, true, result.error);
+    assert.deepEqual(calls.relinked.map((r) => r.name), ["hero.psd", "logo.ai", "photo.jpg"]);
+    assert.ok(calls.relinked.every((r) => r.to.startsWith(share)));
+    assert.ok(result.warnings.includes("Relinked hero.psd (placed on a Mac)"), result.warnings.join(" | "));
+    assert.ok(result.warnings.some((w) => /Missing link: gone\.tif/.test(w)));
+    assert.equal(calls.exported.length, 1);
+    assert.ok(calls.closed.every((c) => c.option === "NO"), "the relinked document is never saved");
+
+    const strict = setup({ linkMappings, failOnMissing: true }, { documents });
+    assert.equal(strict.result.ok, false, "gone.tif is still missing");
+    assert.match(strict.result.error, /1 missing/);
+    fs.rmSync(share, { recursive: true, force: true });
+});
