@@ -70,19 +70,17 @@ Designers send InDesign export jobs from their own computers to the dedicated **
 
 > **Sandbox first:** put the Node.js installer and this folder through your security check before installing. Node.js is signed by the OpenJS Foundation; after installation, `npm ci` installs exactly the versions pinned in `package-lock.json`.
 
-1. **Install Node.js LTS** (22 or newer) from https://nodejs.org, or in PowerShell run `winget install OpenJS.NodeJS.LTS`.
-2. **Copy this folder** to the export PC, e.g. `C:\ExportQueue`.
-3. **Log in as the Windows user who runs InDesign.** InDesign must be installed and signed in for that user.
-4. Right-click **`windows\Install.cmd`** → **Run as administrator**. Administrator rights are only needed for the firewall rule. The installer:
-   - checks Node.js;
+1. **Copy this folder** to the export PC, e.g. to the Desktop.
+2. **Log in as the Windows user who runs InDesign.** InDesign must be installed and signed in for that user.
+3. Right-click **`windows\Install.cmd`** → **Run as administrator**. Administrator rights are only needed for the firewall rule. It does everything else by itself:
+   - installs Node.js with winget if it's missing (Node.js is free and signed by the OpenJS Foundation);
    - installs the dependencies;
-   - creates `config.json` and opens it in Notepad;
-   - makes the queue start automatically at every login;
-   - opens port 8080 for the office network.
-5. **Edit `config.json`** (see below): at least `allowedRoots` and `pathMappings`. Save it.
-6. **Start it:** double-click **`windows\start.cmd`**. A small window opens showing the address, e.g. `http://192.168.1.50:8080/`. Keep it running; minimise it. If the server ever stops unexpectedly, the window restarts it within 10 seconds.
-7. **Test it from a designer's computer:**
-   - Open `http://EXPORT-PC:8080/`.
+   - finds this PC's network drives and writes `config.json`, including the `/Volumes/<share>` paths Macs use (it only asks for the drive address if none is mapped);
+   - makes the queue start at every login;
+   - opens the port for the office network;
+   - starts the queue.
+4. **Test it from a designer's computer:**
+   - Open `http://EXPORT-PC:8080/` (the address is shown in the queue window).
    - Click **Load from InDesign** under the preset field. This checks the connection to InDesign.
    - Submit a small export.
 

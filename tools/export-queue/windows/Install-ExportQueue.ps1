@@ -1,9 +1,10 @@
 <#
   One-time setup of the export queue on the export PC. Run through "Install.cmd".
 
-  - Checks Node.js (22.13 or newer) is installed
+  - Installs Node.js (22.13 or newer) with winget if it's missing
   - Installs the one dependency (Express) with npm
-  - Creates config.json from the example if there isn't one
+  - Creates config.json by itself: finds this PC's network drives, allows them, and maps the
+    names Macs use for them (/Volumes/<share>); asks for the drive only if none is found
   - Starts the queue at every login of this Windows user (Startup folder), because InDesign
     needs the user's desktop session: it can't run as a background Windows service
   - Opens the port in Windows Firewall for the private (office) network, if run as administrator
@@ -13,7 +14,8 @@
 #>
 param(
     [switch]$Uninstall,
-    [switch]$NoStart
+    [switch]$NoStart,
+    [object[]]$TestDrives               # for testing the settings step: @{ Letter = "P:"; Unc = "\\NAS\Projects" }
 )
 
 $ErrorActionPreference = "Stop"
@@ -41,12 +43,26 @@ if ($Uninstall) {
     return
 }
 
-# Node.js
-$node = Get-Command node.exe -ErrorAction SilentlyContinue
-if (-not $node) { throw "Node.js is not installed. Install the LTS version from https://nodejs.org (or: winget install OpenJS.NodeJS.LTS), then run Install.cmd again." }
-$version = (& node.exe --version).TrimStart("v")
-if ([version]$version -lt [version]"22.13.0") { throw "Node.js $version is too old; version 22.13 or newer is needed (it has the built-in database). Install the current LTS from https://nodejs.org." }
-Write-Host "Node.js $version found." -ForegroundColor Green
+# Node.js: install it if missing (winget is built into Windows 10/11)
+function Get-NodeVersion {
+    $node = Get-Command node.exe -ErrorAction SilentlyContinue
+    if (-not $node) { return $null }
+    return [version](& node.exe --version).TrimStart("v")
+}
+$version = Get-NodeVersion
+if (-not $version -or $version -lt [version]"22.13.0") {
+    if (-not (Get-Command winget.exe -ErrorAction SilentlyContinue)) {
+        throw "Node.js 22 or newer is needed. Install the LTS version from https://nodejs.org, then run Install.cmd again."
+    }
+    Write-Host "Installing Node.js (free, from the official OpenJS Foundation package)..." -ForegroundColor Cyan
+    & winget.exe install --id OpenJS.NodeJS.LTS --exact --silent --accept-package-agreements --accept-source-agreements
+    $env:Path = [Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [Environment]::GetEnvironmentVariable("Path", "User")
+    $version = Get-NodeVersion
+    if (-not $version -or $version -lt [version]"22.13.0") {
+        throw "Node.js could not be installed automatically. Install the LTS version from https://nodejs.org, then run Install.cmd again."
+    }
+}
+Write-Host "Node.js $version ready." -ForegroundColor Green
 
 # Dependencies (exact versions from package-lock.json when present)
 Push-Location $AppDir
@@ -56,12 +72,63 @@ try {
 } finally { Pop-Location }
 Write-Host "Dependencies installed." -ForegroundColor Green
 
-# Config
+# Config: written automatically from this PC's network drives.
+function Get-NetworkDrives {
+    if ($TestDrives) { return $TestDrives }
+    @(Get-CimInstance Win32_LogicalDisk -Filter "DriveType = 4" -ErrorAction SilentlyContinue |
+        Where-Object { $_.ProviderName } |
+        ForEach-Object { [pscustomobject]@{ Letter = $_.DeviceID; Unc = $_.ProviderName.TrimEnd("\") } })
+}
+
+function New-QueueConfig($drives) {
+    $roots = New-Object System.Collections.Generic.List[string]
+    $maps = New-Object System.Collections.Generic.List[object]
+    foreach ($d in $drives) {
+        if ($d.Unc) {
+            $unc = $d.Unc.TrimEnd("\")
+            if (-not $roots.Contains($unc)) {
+                $roots.Add($unc)
+                # A Mac shows \\SERVER\Share as /Volumes/Share (smb://server/Share when typed).
+                $share = ($unc -split "\\")[-1]
+                $server = ($unc -split "\\" | Where-Object { $_ })[0]
+                $maps.Add([ordered]@{ from = "/Volumes/$share"; to = $unc })
+                $maps.Add([ordered]@{ from = "smb://$server/$share"; to = $unc })
+            }
+        }
+        if ($d.Letter) {
+            $letter = $d.Letter.TrimEnd("\") + "\"
+            if (-not $roots.Contains($letter)) { $roots.Add($letter) }
+        }
+    }
+    # Start from the example's defaults, replacing only the drive settings.
+    $example = Get-Content (Join-Path $AppDir "config.example.json") -Raw | ConvertFrom-Json
+    $out = [ordered]@{}
+    foreach ($prop in $example.PSObject.Properties) { $out[$prop.Name] = $prop.Value }
+    $out["allowedRoots"] = [object[]]$roots.ToArray()
+    $out["pathMappings"] = [object[]]$maps.ToArray()
+    return [pscustomobject]$out
+}
+
 $config = Join-Path $AppDir "config.json"
-$needsEditing = $false
 if (-not (Test-Path $config)) {
-    Copy-Item (Join-Path $AppDir "config.example.json") $config
-    $needsEditing = $true
+    $drives = @(Get-NetworkDrives)
+    if ($drives.Count -eq 0) {
+        Write-Host ""
+        Write-Host "No mapped network drive was found on this PC." -ForegroundColor Yellow
+        Write-Host "In File Explorer, open the shared projects drive, click the address bar and copy it (e.g. \\NAS\Projects)."
+        while ($true) {
+            $answer = (Read-Host "Paste the projects drive address here").Trim().Trim('"').TrimEnd("\")
+            if ($answer -match '^\\\\[^\\]+\\[^\\]+' -and (Test-Path $answer)) { $drives = @([pscustomobject]@{ Letter = $null; Unc = $answer }); break }
+            if ($answer -match '^[A-Za-z]:$' -and (Test-Path "$answer\")) { $drives = @([pscustomobject]@{ Letter = $answer; Unc = $null }); break }
+            Write-Host "That address can't be opened from this PC. Check it in File Explorer and try again." -ForegroundColor Yellow
+        }
+    }
+    $settings = New-QueueConfig $drives
+    [IO.File]::WriteAllText($config, ($settings | ConvertTo-Json -Depth 5), (New-Object System.Text.UTF8Encoding($false)))
+    Write-Host "Settings written. Jobs may use these drives:" -ForegroundColor Green
+    foreach ($r in $settings.allowedRoots) { Write-Host "   $r" }
+    Write-Host "Mac paths understood automatically:" -ForegroundColor Green
+    foreach ($m in $settings.pathMappings | Where-Object { $_.from -like "/Volumes/*" }) { Write-Host "   $($m.from)  ->  $($m.to)" }
 }
 $port = (Get-Content $config -Raw | ConvertFrom-Json).port
 if (-not $port) { $port = 8080 }
@@ -84,14 +151,6 @@ if (Test-Admin) {
 } else {
     Write-Host "Not running as administrator, so the firewall was not changed. If designers can't open the page," -ForegroundColor Yellow
     Write-Host "right-click Install.cmd > Run as administrator once, or allow port $port for Node.js when Windows asks." -ForegroundColor Yellow
-}
-
-if ($needsEditing) {
-    Write-Host ""
-    Write-Host "IMPORTANT: edit config.json first (allowedRoots and pathMappings = your network drives)." -ForegroundColor Yellow
-    Start-Process notepad.exe $config
-    Write-Host "Save it, then double-click windows\start.cmd (or log out and in)."
-    return
 }
 
 if (-not $NoStart) {
