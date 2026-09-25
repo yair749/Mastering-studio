@@ -1,6 +1,6 @@
 {
   "name": "indesign-export-queue",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "Queue InDesign exports from designer machines to a dedicated export PC on the local network.",
   "private": true,
   "type": "module",
@@ -10,7 +10,8 @@
   },
   "scripts": {
     "start": "node --disable-warning=ExperimentalWarning src/server.js",
-    "test": "node --disable-warning=ExperimentalWarning --test \"test/*.test.js\""
+    "test": "node --disable-warning=ExperimentalWarning --test \"test/*.test.js\"",
+    "test:windows": "pwsh -NoProfile -File test/windows-scripts.test.ps1"
   },
   "dependencies": {
     "express": "^5.1.0"
