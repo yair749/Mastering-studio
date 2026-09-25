@@ -287,6 +287,8 @@ export function createPathResolver({ allowedRoots, pathMappings, drives = [], pl
         uniqueOutput,
         timed,
         notAnswering: (forPath) => notAnswering(locate(forPath)),
+        // Compares two export-PC paths the way this PC's file system does.
+        key: (s) => fold(String(s).normalize("NFC")),
         drives: driveList,
         pathApi: p,
         fs,

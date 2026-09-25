@@ -9,9 +9,11 @@ export const FORMATS = {
 };
 
 export class ValidationError extends Error {
-    constructor(errors) {
-        super("Please fix the highlighted fields.");
+    constructor(errors, pathErrors) {
+        const messages = Object.values(errors);
+        super(messages.length === 1 ? messages[0] : "Please fix the highlighted fields.");
         this.errors = errors;           // { field: message }
+        this.pathErrors = pathErrors;   // [{ index, input, message }] for a list of files, or undefined
     }
 }
 
