@@ -1,36 +1,103 @@
 // Entry point: loads config, opens the job database, starts the queue worker and serves the
 // web UI + API on the local network.
+//
+// Exit codes (read by windows\start.cmd): 2 = config.json needs fixing, 3 = port already in
+// use (another copy is running), 5 = stopped on request for maintenance (the installer), 1 = crash.
 import fs from "node:fs";
-import os from "node:os";
+import fsp from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import express from "express";
 import { createApi } from "./api.js";
+import { createBrowser } from "./browse.js";
 import { ConfigError, loadConfig } from "./config.js";
 import { JobStore } from "./db.js";
+import { createDriveMonitor } from "./drives.js";
 import { createEventHub } from "./events.js";
 import { createInDesign } from "./indesign.js";
+import { createLanUrl } from "./lanurl.js";
 import { createLogger } from "./log.js";
 import { createNotifier } from "./notify.js";
-import { createPathResolver } from "./paths.js";
+import { buildLinkMappings, createPathResolver } from "./paths.js";
+import { createPresetService } from "./presets.js";
 import { createWorker } from "./worker.js";
 
 const APP_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const VERSION = JSON.parse(fs.readFileSync(path.join(APP_DIR, "package.json"), "utf8")).version;
+const STARTUP_ERROR_FILE = path.join(APP_DIR, "data", "logs", "startup-error.txt");
 
-function lanUrls(port) {
-    return Object.values(os.networkInterfaces()).flat()
-        .filter((a) => a && a.family === "IPv4" && !a.internal)
-        .map((a) => `http://${a.address}:${port}/`);
-}
+export const EXIT_MAINTENANCE = 5;
 
-export function createApp(config, { log, platform = process.platform === "win32" ? "win32" : "posix" } = {}) {
+const DEFAULT_TIMINGS = {
+    networkTimeoutMs: 15_000,   // any single file-system call on a client drive
+    driveCheckMs: 60_000,
+    unreachableRetryMs: Number(process.env.EXPORT_QUEUE_RETRY_MS) || 60_000,
+    pollMs: 5_000,
+};
+
+export function createApp(config, {
+    log,
+    platform = process.platform === "win32" ? "win32" : "posix",
+    timings = {},
+    fs: fsApi = fsp,
+    isLocalRequest,
+    onShutdownRequest,
+} = {}) {
+    const t = { ...DEFAULT_TIMINGS, ...timings };
     const store = new JobStore(config.dbFile ?? path.join(config.dataDir, "jobs.db"));
-    const events = createEventHub(log);
-    const indesign = createInDesign(config, log);
-    const resolver = createPathResolver({ allowedRoots: config.allowedRoots, pathMappings: config.pathMappings, platform });
-    const notifier = createNotifier(config, log);
-    const worker = createWorker({ store, indesign, resolver, config, events, notifier, log });
+    const events = createEventHub(log, { heartbeatMs: t.heartbeatMs });
+    const indesign = createInDesign(config, log, { timings: t });
+    const resolver = createPathResolver({
+        allowedRoots: config.allowedRoots, pathMappings: config.pathMappings, drives: config.drives ?? [],
+        platform, fs: fsApi, timeoutMs: t.networkTimeoutMs,
+    });
+    for (const d of resolver.ignoredDrives) {
+        log.warn(`config.json lists the drive ${d.name} (${d.path}), but it isn't inside "allowedRoots", so it isn't offered.`);
+    }
+    const lanUrl = createLanUrl(config);
+    const notifier = createNotifier(config, log, { lanUrl });
+    const presets = createPresetService({ indesign, store, events, log });
+    const startedAt = Date.now();
+
+    const present = (job) => job && {
+        ...job,
+        drive: resolver.locate(job.sourcePath)?.drive ?? null,
+        ...(job.status === "pending" ? { queuePosition: store.queuePosition(job.id) } : {}),
+    };
+
+    let worker = null, monitor = null;
+    function health() {
+        return {
+            ok: true,
+            version: VERSION,
+            serverTime: Date.now(),
+            startedAt,
+            lanUrl: lanUrl(),
+            worker: worker.status(),
+            indesign: indesign.state(),
+            drives: monitor.snapshot(),
+            counts: store.counts(),
+            notifications: notifier.enabled,
+            presets: store.getMeta("presets"),
+        };
+    }
+    const publishHealth = () => {
+        try {
+            events.publish("health", health());
+        } catch (err) {
+            log.error(`Could not send the status to the dashboards: ${err.message}`);
+        }
+    };
+
+    monitor = createDriveMonitor({ drives: resolver.drives, fs: fsApi, timeoutMs: t.networkTimeoutMs, intervalMs: t.driveCheckMs, log, onChange: publishHealth });
+    worker = createWorker({
+        store, indesign, resolver, config, events, notifier, log, present,
+        linkMappings: buildLinkMappings(config.pathMappings, resolver.drives),
+        timings: t,
+        onHealthChange: publishHealth,
+    });
+    indesign.onChange(() => publishHealth());
+    const browser = createBrowser({ resolver, monitor, timeoutMs: t.networkTimeoutMs });
 
     const app = express();
     app.disable("x-powered-by");
@@ -44,10 +111,42 @@ export function createApp(config, { log, platform = process.platform === "win32"
         });
         next();
     });
-    app.use("/api", createApi({ store, worker, indesign, resolver, events, notifier, config, log, version: VERSION }));
+    app.use("/api", createApi({
+        store, worker, presets, resolver, browser, events, config, log, version: VERSION,
+        health, present, isLocalRequest, onShutdownRequest,
+    }));
     app.use(express.static(path.join(APP_DIR, "public"), { index: "index.html", maxAge: "5m" }));
 
-    return { app, store, worker, events };
+    return {
+        app, store, worker, events, indesign, presets, monitor, resolver, health, lanUrl,
+        // Background work: the queue, the drive checks, and a first look at InDesign (which also
+        // fills the preset list), so problems show before the first job instead of during it.
+        start() {
+            worker.start();
+            monitor.start();
+            presets.refreshInBackground("start-up");
+        },
+        async stop() {
+            monitor.stop();
+            events.close();
+            await worker.stop();
+            await presets.idle();
+            store.close();
+        },
+    };
+}
+
+// config.json problems happen before the log exists, and the queue runs without a console
+// window, so the message also goes to a file start.cmd (and the owner) can show.
+function reportStartupError(message) {
+    console.error(message);
+    try {
+        fs.mkdirSync(path.dirname(STARTUP_ERROR_FILE), { recursive: true });
+        fs.writeFileSync(STARTUP_ERROR_FILE, `${message}\r\n`);
+        fs.appendFileSync(path.join(path.dirname(STARTUP_ERROR_FILE), "server.log"), `${new Date().toISOString()} ERROR ${message}\n`);
+    } catch {
+        // Nowhere to write: the console message is all we can do.
+    }
 }
 
 async function main() {
@@ -56,20 +155,21 @@ async function main() {
         config = loadConfig(APP_DIR);
     } catch (err) {
         if (err instanceof ConfigError) {
-            console.error(err.message);
+            reportStartupError(err.message);
             process.exit(2);
         }
         throw err;
     }
+    fs.rmSync(STARTUP_ERROR_FILE, { force: true });
     const log = createLogger(path.join(config.dataDir, "logs"));
-    const urls = lanUrls(config.port);
-    config.publicUrl = urls[0] ?? `http://localhost:${config.port}/`;
 
     // Job/result files left behind by a crash; nothing is running yet, so all are stale.
     fs.rmSync(path.join(config.dataDir, "tmp"), { recursive: true, force: true });
 
-    const { app, store, worker, events } = createApp(config, { log });
-    worker.start();
+    let shutdown = () => {};
+    const ctx = createApp(config, { log, onShutdownRequest: () => shutdown("Stop requested", EXIT_MAINTENANCE) });
+    const { app, store } = ctx;
+    ctx.start();
 
     const purge = () => {
         try {
@@ -85,7 +185,8 @@ async function main() {
     const server = app.listen(config.port, config.host);
     server.on("listening", () => {
         log.info(`InDesign export queue v${VERSION} running (InDesign mode: ${config.indesign.executor}).`);
-        log.info(`Designers open: ${urls.join("  ") || `http://localhost:${config.port}/`}`);
+        log.info(`Designers open: ${ctx.lanUrl()}`);
+        log.info(`Client drives: ${ctx.resolver.drives.map((d) => d.name).join(", ") || "none"}${config.drivesDerived ? " (from allowedRoots)" : ""}`);
         if (config.ntfy.topic) log.info(`Notifications: ${config.ntfy.notifyOn.join(" + ")} jobs -> ${config.ntfy.server}/<channel>${config.ntfy.autoDetected ? " (from the export notifier's settings)" : ""}`);
     });
     server.on("error", (err) => {
@@ -98,18 +199,25 @@ async function main() {
     });
 
     let stopping = false;
-    const shutdown = async (signal) => {
+    shutdown = async (reason, code = 0) => {
         if (stopping) return;
         stopping = true;
-        log.info(`${signal}: stopping (a job already in InDesign is allowed to finish).`);
+        log.info(`${reason}: stopping (a job already in InDesign is allowed to finish).`);
         server.close();
-        events.close();
-        await worker.stop();
-        store.close();
-        process.exit(0);
+        try {
+            await ctx.stop();
+        } catch (err) {
+            log.error(`Problem while stopping: ${err.message}`);
+        }
+        log.info(code === EXIT_MAINTENANCE ? `Stopped for maintenance (exit code ${code}).` : "Stopped.");
+        process.exit(code);
     };
     process.on("SIGINT", () => shutdown("SIGINT"));
     process.on("SIGTERM", () => shutdown("SIGTERM"));
+    process.on("SIGBREAK", () => shutdown("Ctrl+Break"));
+    // Sent when the console window is closed; Windows ends the process a few seconds later,
+    // so at least the reason is in the log.
+    process.on("SIGHUP", () => shutdown("The export queue's window was closed"));
     process.on("uncaughtException", (err) => {
         log.error(`Unexpected error, restarting: ${err.stack || err.message}`);
         process.exit(1);    // start.cmd restarts the server; interrupted jobs are marked failed on start

@@ -1,11 +1,16 @@
 // Server-Sent Events: pushes job changes to every open dashboard the moment they happen
 // (no polling, no extra library). Browsers reconnect by themselves if the server restarts.
-export function createEventHub(log) {
+export function createEventHub(log, { heartbeatMs = 25_000 } = {}) {
     const clients = new Set();
 
+    // A named event rather than an SSE comment, so a page can notice a connection that went
+    // quiet (laptop sleep, Wi-Fi change) and reconnect; it also carries the export PC's clock.
     const heartbeat = setInterval(() => {
-        for (const res of clients) res.write(": keepalive\n\n");
-    }, 25_000);
+        const payload = `event: ping\ndata: ${JSON.stringify({ serverTime: Date.now() })}\n\n`;
+        for (const res of clients) {
+            try { res.write(payload); } catch { clients.delete(res); }
+        }
+    }, heartbeatMs);
     heartbeat.unref();
 
     return {

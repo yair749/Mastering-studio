@@ -2,14 +2,15 @@
  * Export-queue actions inside Adobe InDesign. Run by run-indesign.ps1 through DoScript.
  *
  * Input:  a job file written by the Node server; its path is in app.scriptArgs "exportQueueJob".
- *         { action: "export" | "listPresets", resultPath, sourcePath, outputPath, format,
+ *         { action: "export" | "listPresets", resultPath, jobId, sourcePath, outputPath, format,
  *           pdfPreset, pageRange, useDocumentBleed, includeSlug, packageIncludeIdml,
- *           packageIncludePdf, failOnMissing }
+ *           packageIncludePdf, failOnMissing, linkMappings: [{ from, to }] }
  * Output: a result file at job.resultPath:
  *         { ok, outputs: [{ path, bytes, kind }], warnings: [], error, indesignVersion, presets? }
  *
  * Dialogs are suppressed for the duration (missing fonts/links, profile mismatch...), so an
- * unattended export PC never waits for a click. ExtendScript is ES3: no JSON object.
+ * unattended export PC never waits for a click. The document is never saved.
+ * ExtendScript is ES3: no JSON object, no Array map/indexOf.
  */
 (function () {
     var TEMP_PRESET_PREFIX = "__export_queue_";
@@ -137,14 +138,92 @@
         try { app.interactivePDFExportPreferences.pageRange = PageRange.ALL_PAGES; } catch (e) {}
     }
 
-    function findOpenDocument(file) {
-        var target = file.fsName.toLowerCase();
-        for (var i = 0; i < app.documents.length; i++) {
-            try {
-                if (app.documents[i].fullName.fsName.toLowerCase() === target) return app.documents[i];
-            } catch (e) { /* unsaved document: no fullName */ }
+    // File.name is URI-encoded in ExtendScript ("Poster%20A1.indd").
+    function fileLabel(f) {
+        try { return decodeURI(f.name); } catch (e) { return String(f.name); }
+    }
+
+    // Opens the document from disk, never a copy that is already open on the export PC: that one
+    // may be older than the file the designer saved since, or hold edits nobody saved.
+    // InDesign returns the open document when asked to open a file that is open already, also
+    // under another spelling of its path (M:\... vs \\server\share\...), so ids are compared.
+    function openFresh(src) {
+        var before = {}, i;
+        for (i = 0; i < app.documents.length; i++) {
+            try { before[app.documents[i].id] = true; } catch (e) {}
         }
-        return null;
+        var doc = app.open(src, false);
+        if (!before[doc.id]) return doc;
+        if (doc.modified) {
+            throw new Error(fileLabel(src) + " is open on the export PC with unsaved changes. Close it there, then run the export again.");
+        }
+        doc.close(SaveOptions.NO);        // nothing is lost: it had no unsaved changes
+        return app.open(src, false);
+    }
+
+    // ---------- links placed on a Mac ----------
+
+    function startsWithNoCase(s, prefix) {
+        return s.length >= prefix.length && s.substring(0, prefix.length).toLowerCase() === prefix.toLowerCase();
+    }
+
+    // The folder names after `from`, or null if `linkPath` isn't under it. A Mac mounts a second
+    // connection to the same share as "/Volumes/Share-1", so "-1" style suffixes match too.
+    function restAfter(linkPath, from) {
+        var s = linkPath, sepRe, style;
+        if (/^smb:\/\//i.test(from)) {
+            try { s = decodeURIComponent(s); } catch (e) {}
+            style = "url";
+        } else if (/^[A-Za-z]:$/.test(from)) {
+            style = "windows";
+        } else if (/:$/.test(from)) {
+            style = "hfs";                     // old-style Mac path: "Share:folder:file.psd"
+        } else {
+            style = "posix";
+        }
+        if (style !== "hfs") { s = s.replace(/\\/g, "/"); from = from.replace(/\\/g, "/"); }
+        if (!startsWithNoCase(s, style === "hfs" ? from.substring(0, from.length - 1) : from)) return null;
+        var after = s.substring(style === "hfs" ? from.length - 1 : from.length);
+        var suffix = /^-\d{1,3}(?=[:\/]|$)/.exec(after);
+        if (suffix && (style === "hfs" || /^\/volumes\//i.test(from))) after = after.substring(suffix[0].length);
+        sepRe = style === "hfs" ? /^:/ : /^\//;
+        if (!sepRe.test(after)) return null;
+        var parts = after.substring(1).split(style === "hfs" ? ":" : "/"), out = [];
+        for (var i = 0; i < parts.length; i++) {
+            if (parts[i] === "..") return null;
+            if (parts[i] !== "") out.push(parts[i]);
+        }
+        return out.length ? { parts: out, mac: style !== "windows" && !/^\/\//.test(from) } : null;
+    }
+
+    // Missing links whose file is on a client drive under another name (e.g. placed on a Mac as
+    // /Volumes/MG_Mega/...) are pointed at the export PC's copy. Only the unsaved copy in
+    // InDesign's memory changes; the document is closed without saving.
+    function relinkMovedLinks(doc, job, result) {
+        var mappings = job.linkMappings || [], relinked = 0;
+        if (!mappings.length) return 0;
+        var links = doc.links;
+        for (var i = 0; i < links.length; i++) {
+            var link = links[i];
+            try {
+                if (link.status != LinkStatus.LINK_MISSING) continue;
+                var linkPath = String(link.filePath);
+                for (var m = 0; m < mappings.length; m++) {
+                    var rest = restAfter(linkPath, String(mappings[m].from));
+                    if (!rest) continue;
+                    var to = String(mappings[m].to).replace(/[\\\/]+$/, "");
+                    var sep = to.indexOf("\\") >= 0 ? "\\" : "/";
+                    var file = new File(to + sep + rest.parts.join(sep));
+                    if (!file.exists) continue;
+                    link.relink(file);
+                    try { if (link.status == LinkStatus.LINK_OUT_OF_DATE) link.update(); } catch (e) {}
+                    warn(result, "Relinked " + link.name + (rest.mac ? " (placed on a Mac)" : " (placed from another computer)"));
+                    relinked++;
+                    break;
+                }
+            } catch (e) { /* leave it missing: reported by checkDocument */ }
+        }
+        return relinked;
     }
 
     // Warnings for missing/modified links and missing fonts. Returns how many are missing.
@@ -219,7 +298,11 @@
             "",                          // version comments
             false                        // force save
         );
-        if (ok === false) throw new Error("InDesign reported that packaging failed.");
+        if (ok === false) {
+            throw new Error("InDesign reported that packaging failed." + (job.relinked
+                ? " " + job.relinked + " image(s) placed on a Mac had been relinked first, which InDesign may want saved; ask for the document to be relinked and saved, then package again."
+                : ""));
+        }
     }
 
     function requireFields(job, names) {
@@ -239,15 +322,10 @@
         var out = job.format === "package" ? new Folder(job.outputPath) : new File(job.outputPath);
         var modifiedBefore = (job.format !== "package" && out.exists) ? out.modified.getTime() : null;
 
-        var doc = null, openedHere = false, state = { tempPreset: null };
+        var doc = null, state = { tempPreset: null };
         try {
-            doc = findOpenDocument(src);
-            if (doc) {
-                if (doc.modified) warn(result, "The document was already open on the export PC with unsaved changes; that open version was exported.");
-            } else {
-                doc = app.open(src, false);
-                openedHere = true;
-            }
+            doc = openFresh(src);
+            job.relinked = relinkMovedLinks(doc, job, result);
 
             var missing = checkDocument(doc, result);
             if (job.failOnMissing && missing > 0) {
@@ -262,7 +340,7 @@
         } finally {
             if (state.tempPreset) { try { state.tempPreset.remove(); } catch (e) {} }
             resetPageRanges();
-            if (doc && openedHere) {
+            if (doc) {
                 try { doc.close(SaveOptions.NO); } catch (e) { warn(result, "InDesign could not close the document: " + describeError(e)); }
             }
         }

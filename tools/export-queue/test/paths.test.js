@@ -32,12 +32,12 @@ test("Mac, smb:// and other-drive-letter paths are mapped", () => {
 test("a second macOS mount of the same share (/Volumes/Share-1) is mapped too", () => {
     assert.equal(resolve("/Volumes/Projects-1/Client/Poster.indd"), "\\\\NAS\\Projects\\Client\\Poster.indd");
     assert.equal(resolve("/Volumes/Projects-12/Poster.indd"), "\\\\NAS\\Projects\\Poster.indd");
-    rejects("/Volumes/Projects-Old/Poster.indd", /full path|allowed/);        // a different share, not a re-mount
-    rejects("/Volumes/Projects2/Poster.indd", /full path|allowed/);
+    rejects("/Volumes/Projects-Old/Poster.indd", /doesn't have a drive called “Projects-Old”/);        // a different share, not a re-mount
+    rejects("/Volumes/Projects2/Poster.indd", /doesn't have a drive called “Projects2”/);
 });
 
 test("the longest matching mapping wins, then the root check applies", () => {
-    rejects("/Volumes/Projects/Archive/Old.indd", /allowed to use/);   // maps to \\NAS\Archive, not allowed
+    rejects("/Volumes/Projects/Archive/Old.indd", /isn't on one of the client drives/);   // maps to \\NAS\Archive, not allowed
 });
 
 test("quoted 'Copy as path' values and file:// URLs are cleaned up", () => {
@@ -46,12 +46,14 @@ test("quoted 'Copy as path' values and file:// URLs are cleaned up", () => {
 });
 
 test("paths outside the roots, relative paths and traversal are refused", () => {
-    rejects("C:\\Windows\\System32\\evil.indd", /allowed to use/);
+    rejects("C:\\Windows\\System32\\evil.indd", /your own computer/);
     rejects("\\\\NAS\\Studio\\Shared\\..\\Private\\x.indd", /"\.\."/);
     rejects("/Volumes/Projects/../../Studio/Private/x.indd", /"\.\."/);
-    rejects("\\\\NAS\\ProjectsEvil\\x.indd", /allowed to use/);
-    rejects("Client\\Poster.indd", /full path/);
-    rejects("/Users/dana/Desktop/Poster.indd", /full path|allowed/);
+    rejects("\\\\NAS\\ProjectsEvil\\x.indd", /doesn't have a drive called “ProjectsEvil” on “NAS”/);
+    rejects("Client\\Poster.indd", /isn't a full path/);
+    rejects("/Users/dana/Desktop/Poster.indd", /your own computer/);
+    rejects("Poster.indd", /only the file name/);
+    rejects("G:\\Client\\Poster.indd", /Drive G: isn't one of the export PC's drives/);
 });
 
 test("wrong extension, bad characters and empty input are refused", () => {

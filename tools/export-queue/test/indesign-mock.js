@@ -1,11 +1,17 @@
 // A stand-in for the parts of InDesign's scripting model that indesign-worker.jsx uses,
 // backed by the real file system, so the script can be run and checked without InDesign.
+//
+// Documents: `documents` describe files on disk ({ path, links, fonts }), `openDocs` are
+// already open in InDesign ({ path, modified, aliases: [other spellings of the same file] }).
+// Like InDesign, opening a file that is already open returns that open document.
+// Links: { name, status, filePath } plus `statusAfterRelink` (default "NORMAL").
 import fs from "node:fs";
 import path from "node:path";
 import vm from "node:vm";
 
 export function runWorkerScript({ jsxSource, jobFile, documents = [], presets, openDocs = [], exportWritesFile = true }) {
-    const calls = { opened: [], exported: [], packaged: [], closed: [], removedPresets: [] };
+    const calls = { opened: [], exported: [], packaged: [], closed: [], removedPresets: [], relinked: [], updated: [] };
+    let nextDocId = 100;
 
     class Folder {
         constructor(p) { this._p = String(p); }
@@ -92,15 +98,38 @@ export function runWorkerScript({ jsxSource, jobFile, documents = [], presets, o
     });
     app.pdfExportPresets = presetCollection;
 
+    function makeLink(spec) {
+        const link = {
+            name: spec.name,
+            status: spec.status,
+            filePath: spec.filePath ?? `C:\\Unknown\\${spec.name}`,
+            relink(file) {
+                calls.relinked.push({ name: link.name, from: link.filePath, to: file.fsName });
+                if (!fs.existsSync(file.fsName)) throw new Error(`relink: ${file.fsName} doesn't exist`);
+                link.filePath = file.fsName;
+                link.status = spec.statusAfterRelink ?? LinkStatus.NORMAL;
+            },
+            update() {
+                calls.updated.push(link.name);
+                link.status = LinkStatus.NORMAL;
+                return link;
+            },
+        };
+        return link;
+    }
+
     function makeDoc(spec) {
         const doc = {
+            id: nextDocId++,
             isValid: true,
             modified: Boolean(spec.modified),
             fullName: new File(spec.path),
-            links: spec.links || [],
+            links: (spec.links || []).map(makeLink),
             fonts: spec.fonts || [],
+            _spec: spec,
             exportFile(format, file, showing, preset) {
                 calls.exported.push({
+                    docId: doc.id, fromOpenCopy: Boolean(spec.alreadyOpen),
                     format, file: file.fsName, showing,
                     presetName: preset?.name,
                     presetSettings: preset ? { ...preset.properties } : null,
@@ -115,19 +144,29 @@ export function runWorkerScript({ jsxSource, jobFile, documents = [], presets, o
                 fs.writeFileSync(path.join(folder.fsName, "Instructions.txt"), "package");
                 return true;
             },
-            close(option) { calls.closed.push({ path: spec.path, option }); doc.isValid = false; },
+            close(option) {
+                calls.closed.push({ path: spec.path, option, docId: doc.id, wasOpenAlready: Boolean(spec.alreadyOpen) });
+                doc.isValid = false;
+                const i = docs.indexOf(doc);
+                if (i >= 0) docs.splice(i, 1);
+            },
         };
         return doc;
     }
-    const docs = openDocs.map(makeDoc);
+    // A live collection, like app.documents: opening adds, closing removes.
+    const docs = openDocs.map((spec) => makeDoc({ ...spec, alreadyOpen: true }));
     app.documents = docs;
     app.open = (file, showingWindow) => {
         calls.opened.push({ path: file.fsName, showingWindow });
-        const spec = documents.find((d) => d.path === file.fsName) || { path: file.fsName };
-        return makeDoc(spec);
+        const open = docs.find((d) => d._spec.path === file.fsName || (d._spec.aliases || []).includes(file.fsName));
+        if (open) return open;
+        const doc = makeDoc(documents.find((d) => d.path === file.fsName) || { path: file.fsName });
+        docs.push(doc);
+        return doc;
     };
 
-    const context = vm.createContext({ app, File, Folder, ExportFormat, PageRange, SaveOptions, UserInteractionLevels, LinkStatus, FontStatus, isFinite, String, Error });
+    const context = vm.createContext({ app, File, Folder, ExportFormat, PageRange, SaveOptions, UserInteractionLevels, LinkStatus, FontStatus,
+        isFinite, String, Error, decodeURI, decodeURIComponent });
     vm.runInContext(jsxSource, context);
     return { calls, app, presets: list };
 }

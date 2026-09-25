@@ -40,7 +40,7 @@ class Lock {
 // ExtendScript is ES3: JSON is read with eval, and ES3 treats U+2028/U+2029 inside strings
 // as line breaks, so escape them. The file is written only by this server.
 function toExtendScriptJson(value) {
-    return JSON.stringify(value).replace(/ /g, "\\u2028").replace(/ /g, "\\u2029");
+    return JSON.stringify(value).replace(/\u2028/g, "\\u2028").replace(/\u2029/g, "\\u2029");
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));

@@ -59,7 +59,7 @@
             <div class="field">
                 <label for="submittedBy">Your name</label>
                 <input id="submittedBy" name="submittedBy" autocomplete="name" maxlength="80" required aria-describedby="err-submittedBy">
-                <p class="error" id="err-submittedBy"></p>
+                <div class="error" id="err-submittedBy"></div>
             </div>
 
             <div class="field" id="filesField">
@@ -103,7 +103,7 @@
                 <div class="chips" id="formatOptions">
                     <p class="hint">Loading formats…</p>
                 </div>
-                <p class="error" id="err-formats"></p>
+                <div class="error" id="err-formats"></div>
             </fieldset>
 
             <div class="field" data-needs="preset" hidden>
@@ -115,14 +115,14 @@
                     <button type="button" id="refreshPresets" class="btn btn-ghost">Load from InDesign</button>
                 </div>
                 <p class="hint" id="presetHint">Type the exact preset name, or load the list from the export PC.</p>
-                <p class="error" id="err-pdfPreset"></p>
+                <div class="error" id="err-pdfPreset"></div>
             </div>
 
             <div class="field" data-needs="pages" hidden>
                 <label for="pageRange">Pages</label>
                 <input id="pageRange" value="All" spellcheck="false" autocomplete="off" maxlength="200" aria-describedby="pagesHint err-pageRange">
                 <p class="hint" id="pagesHint">Leave as “All”, or type pages like <code>1-4, 7</code> (the numbers in InDesign's Pages panel). <code>+1-+3</code> means the file's 1st to 3rd page, whatever the section numbering.</p>
-                <p class="error" id="err-pageRange"></p>
+                <div class="error" id="err-pageRange"></div>
             </div>
 
             <div class="field checks" data-needs="bleed" hidden>
@@ -147,7 +147,7 @@
                             <button type="button" class="btn btn-ghost" id="browseFolder">Choose…</button>
                         </div>
                         <p class="check-line" id="folderCheck"></p>
-                        <p class="error" id="err-outputFolder"></p>
+                        <div class="error" id="err-outputFolder"></div>
                     </div>
                     <div class="checks">
                         <label class="check"><input type="checkbox" id="overwrite"> Replace existing files with the same name <span class="muted">(otherwise it's saved as “Name (2)”)</span></label>
@@ -156,14 +156,14 @@
                 </div>
             </details>
 
-            <div class="summary" id="summary" aria-describedby="summaryWhere">
+            <div class="summary" id="summary">
                 <p class="summary-where" id="summaryWhere">Saved next to each InDesign file</p>
                 <p class="summary-options" id="summaryOptions" hidden></p>
                 <button type="button" class="btn-link" id="useSourceFolder" hidden>Save next to the InDesign files instead</button>
             </div>
 
             <div class="error form-error" id="err-form"></div>
-            <button type="submit" class="btn btn-primary" id="submitBtn">Add to queue</button>
+            <button type="submit" class="btn btn-primary" id="submitBtn" aria-describedby="summaryWhere summaryOptions">Add to queue</button>
 
             <label class="check small sound"><input type="checkbox" id="soundOn"> Play a sound when my export finishes <span class="muted">(while this page is open)</span></label>
         </form>

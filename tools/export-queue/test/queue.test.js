@@ -31,9 +31,9 @@ function makeEnv({ accessKey = "" } = {}) {
     return { root, projects, config };
 }
 
-async function startServer(env) {
+async function startServer(env, appOptions = {}) {
     const log = createLogger(null, { quiet: true });
-    const { app, worker, store, events } = createApp(env.config, { log, platform: "posix" });
+    const { app, worker, store, events } = createApp(env.config, { log, platform: "posix", ...appOptions });
     worker.start();
     const server = await new Promise((resolve) => { const s = app.listen(0, "127.0.0.1", () => resolve(s)); });
     const base = `http://127.0.0.1:${server.address().port}/api`;
@@ -185,16 +185,18 @@ test("the event stream pushes job updates", async () => {
     assert.match(text, new RegExp(`"id":${id},"status":"completed"`));
 });
 
-test("presets are fetched from InDesign and cached", async () => {
-    assert.deepEqual((await srv.call("GET", "/presets")).body.presets, []);
+test("presets are fetched from InDesign by themselves at startup, cached, and refreshable", async () => {
+    let cached;
+    for (let i = 0; i < 100 && !(cached = (await srv.call("GET", "/presets")).body).presets.length; i++) await new Promise((r) => setTimeout(r, 25));
+    assert.ok(cached.presets.includes("[High Quality Print]"), "loaded at startup without anyone clicking");
     const fresh = await srv.call("POST", "/presets/refresh");
-    assert.ok(fresh.body.presets.includes("[High Quality Print]"));
-    assert.deepEqual((await srv.call("GET", "/presets")).body.presets, fresh.body.presets);
+    assert.deepEqual(fresh.body.presets, cached.presets);
 });
 
 test("with an access key, the API refuses requests without it", async () => {
     const keyEnv = makeEnv({ accessKey: "office-secret" });
-    const s = await startServer(keyEnv);
+    // Requests from the export PC itself skip the key; act like a designer's computer here.
+    const s = await startServer(keyEnv, { isLocalRequest: () => false });
     try {
         assert.equal((await s.call("GET", "/jobs")).status, 401);
         assert.equal((await s.call("GET", "/jobs", undefined, { "X-Access-Key": "wrong" })).status, 401);

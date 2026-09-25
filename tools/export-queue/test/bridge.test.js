@@ -61,7 +61,8 @@ test("InDesign's own error message is passed on", { skip }, async () => {
 });
 
 test("problems reaching InDesign, or no result, become clear errors", { skip }, async () => {
-    await assert.rejects(setup("no-indesign").indesign.exportJob(payload), /InDesign could not run the export: Could not start or connect to InDesign/);
+    // Exit code 3 = InDesign couldn't be reached: flagged so the queue keeps the job waiting instead of failing it.
+    await assert.rejects(setup("no-indesign").indesign.exportJob(payload), (e) => e.unreachable === true && /Could not start or connect to InDesign/.test(e.message));
     await assert.rejects(setup("no-result").indesign.exportJob(payload), /exited without reporting a result/);
 });
 

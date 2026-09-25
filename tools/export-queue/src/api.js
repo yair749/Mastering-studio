@@ -35,7 +35,7 @@ function contentDisposition(type, name) {
     return `${type}; filename="${fallback}"; filename*=UTF-8''${encoded}`;
 }
 
-export function createApi({ store, worker, indesign, presets, resolver, browser, events, notifier, config, log, version,
+export function createApi({ store, worker, presets, resolver, browser, events, config, log, version,
     health, present, isLocalRequest = isLoopback, onShutdownRequest = () => {} }) {
     const api = express.Router();
     // 50 paths of up to 1024 characters each.

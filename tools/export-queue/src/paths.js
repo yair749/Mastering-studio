@@ -61,11 +61,14 @@ export function createPathResolver({ allowedRoots, pathMappings, drives = [], pl
     const mappings = [...pathMappings]
         .map((m) => ({ from: trimSep(m.from), to: trimSep(m.to) }))
         .sort((a, b) => b.from.length - a.from.length);
-    const driveList = drives.map((d) => ({
+    // allowedRoots stays the only security boundary: a drive listed outside it isn't offered.
+    const allDrives = drives.map((d) => ({
         name: d.name,
         path: trimSep(p.normalize(toNative(d.path))) || d.path,
         letter: d.letter ? d.letter.slice(0, 2).toUpperCase() : null,
     }));
+    const driveList = allDrives.filter((d) => roots.some((r) => isUnder(d.path, r)));
+    const ignoredDrives = allDrives.filter((d) => !driveList.includes(d));
 
     function clean(input) {
         let s = String(input ?? "").trim();
@@ -139,7 +142,7 @@ export function createPathResolver({ allowedRoots, pathMappings, drives = [], pl
         const pick = `Use Browse… to pick the ${noun}`;
         const unknownDrive = (label) => {
             const list = driveNames();
-            return `The export PC doesn't have a drive called “${label}”.${list ? ` Client drives: ${list}` : ""} (use Browse… to pick the ${noun}).`;
+            return `The export PC doesn't have a drive called “${label}”.${list ? ` Client drives: ${list}.` : ""} Use Browse… to pick the ${noun}.`;
         };
         const ownComputer = kind === "folder"
             ? "This folder is on your own computer, not on a client drive. Choose a folder on the client's drive."
@@ -290,6 +293,7 @@ export function createPathResolver({ allowedRoots, pathMappings, drives = [], pl
         // Compares two export-PC paths the way this PC's file system does.
         key: (s) => fold(String(s).normalize("NFC")),
         drives: driveList,
+        ignoredDrives,
         pathApi: p,
         fs,
     };

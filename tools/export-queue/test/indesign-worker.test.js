@@ -102,12 +102,28 @@ test("missing links and fonts become warnings, or stop the export when asked", (
     assert.equal(strict.calls.closed.length, 1);
 });
 
-test("a document already open on the export PC is used as is and left open", () => {
+test("a document open on the export PC WITH unsaved changes is refused, not exported stale", () => {
     const { calls, result } = setup({}, { openDocs: (source) => [{ path: source, modified: true }] });
-    assert.equal(result.ok, true);
-    assert.equal(calls.opened.length, 0);
-    assert.equal(calls.closed.length, 0);
-    assert.match(result.warnings[0], /already open .* unsaved changes/);
+    assert.equal(result.ok, false);
+    assert.match(result.error, /open on the export PC with unsaved changes/);
+    assert.equal(calls.exported.length, 0);
+    assert.equal(calls.closed.length, 0, "the unsaved document is left alone");
+});
+
+test("a document open on the export PC without changes is closed and reopened fresh from disk", () => {
+    const { calls, result } = setup({}, { openDocs: (source) => [{ path: source, modified: false }] });
+    assert.equal(result.ok, true, result.error);
+    assert.equal(calls.opened.length, 2, "asked once (got the open copy), then opened fresh");
+    assert.equal(calls.closed.length, 2, "old copy closed, fresh copy closed after export");
+    assert.ok(calls.closed.every((c) => c.option === "NO"), "never saved");
+    assert.equal(calls.exported.length, 1);
+});
+
+test("an open document is recognised under another spelling of its path (M:\\ vs \\\\server)", () => {
+    const { calls, result } = setup({}, { openDocs: (source) => [{ path: "M:\\Client\\Poster.indd", aliases: [source], modified: true }] });
+    assert.equal(result.ok, false);
+    assert.match(result.error, /unsaved changes/);
+    assert.equal(calls.exported.length, 0);
 });
 
 test("PDF (Interactive) and IDML use the right export formats", () => {

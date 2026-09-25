@@ -45,5 +45,6 @@ export function createPresetService({ indesign, store, events, log }) {
         refresh,
         refreshInBackground,
         installed: () => cached().presets ?? [],
+        idle: () => (inflight ? inflight.then(() => {}, () => {}) : Promise.resolve()),
     };
 }
