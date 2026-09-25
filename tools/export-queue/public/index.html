@@ -3,141 +3,252 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light dark">
     <title>Export Queue</title>
-    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23ff3366'/%3E%3Ctext x='16' y='22' font-family='Arial' font-weight='700' font-size='15' text-anchor='middle' fill='white'%3EId%3C/text%3E%3C/svg%3E">
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23e0245e'/%3E%3Ctext x='16' y='22' font-family='Arial' font-weight='700' font-size='15' text-anchor='middle' fill='white'%3EId%3C/text%3E%3C/svg%3E">
     <link rel="stylesheet" href="styles.css">
     <script type="module" src="app.js"></script>
 </head>
 <body>
+<a class="skip" href="#queueTitle">Skip to the queue</a>
+
 <header class="topbar">
     <div class="brand">
         <span class="logo" aria-hidden="true">Id</span>
         <div>
             <h1>Export Queue</h1>
-            <p class="subtitle">Send InDesign exports to the export PC</p>
+            <p class="subtitle">Send InDesign exports to the export PC. It runs them one at a time.</p>
         </div>
     </div>
-    <div class="system" aria-live="polite">
-        <span id="workerState" class="pill pill-muted">Connecting…</span>
-        <span id="connection" class="conn" title="Live updates"></span>
+    <div class="system">
+        <span id="simChip" class="chip-status tone-warn" hidden>Simulation: nothing is really exported</span>
+        <div class="drive-status" id="driveStatus" hidden>
+            <button type="button" id="driveChip" class="chip-status tone-warn" aria-expanded="false" aria-controls="drivePopover"></button>
+            <div id="drivePopover" class="popover" hidden>
+                <p class="popover-title">The export PC can't open these client drives right now:</p>
+                <ul id="driveProblems"></ul>
+                <p class="hint">Exports of files on these drives fail until they're back. It checks again every minute.</p>
+            </div>
+        </div>
+        <span id="workerState" class="chip-status tone-muted">Connecting to the export PC…</span>
     </div>
 </header>
 
+<div class="banners">
+    <div class="banner tone-bad" id="offlineBanner" hidden>
+        <p><strong>Can't reach the export PC.</strong> This page keeps trying by itself. If it lasts more than a minute, check that the export PC is switched on.</p>
+    </div>
+    <div class="banner tone-warn" id="pausedBanner" hidden>
+        <p><strong id="pausedText">InDesign can't be reached on the export PC. Jobs will wait.</strong> They start by themselves once InDesign answers again (checked every minute).</p>
+    </div>
+    <div class="banner tone-info" id="versionBanner" hidden>
+        <p><strong>A new version is available.</strong> Your form stays filled in.</p>
+        <button type="button" class="btn btn-small" id="reloadBtn">Reload</button>
+    </div>
+    <div class="banner tone-warn" id="keyBanner" hidden>
+        <p><strong>Access key needed.</strong> This export queue is protected with the office access key.</p>
+        <button type="button" class="btn btn-small" id="enterKeyBtn">Enter access key</button>
+    </div>
+</div>
+
 <main class="layout">
     <!-- ================= Submission form ================= -->
-    <section class="panel" aria-labelledby="formTitle">
+    <section class="panel form-panel" aria-labelledby="formTitle">
         <h2 id="formTitle">New export</h2>
         <form id="jobForm" novalidate>
             <div class="field">
                 <label for="submittedBy">Your name</label>
-                <input id="submittedBy" name="submittedBy" autocomplete="name" maxlength="80" required>
-                <p class="error" data-error-for="submittedBy"></p>
+                <input id="submittedBy" name="submittedBy" autocomplete="name" maxlength="80" required aria-describedby="err-submittedBy">
+                <p class="error" id="err-submittedBy"></p>
             </div>
 
-            <div class="field">
-                <label for="sourcePath">InDesign file</label>
-                <input id="sourcePath" name="sourcePath" spellcheck="false" autocomplete="off" required
-                       placeholder="\\NAS\Projects\Client\Campaign\Poster.indd">
-                <p class="hint" id="pathHint">Paste the full path of the .indd file on the network drive.</p>
-                <p class="error" data-error-for="sourcePath"></p>
+            <div class="field" id="filesField">
+                <div class="label-row">
+                    <label for="sourcePaths">InDesign files</label>
+                    <button type="button" class="btn btn-small" id="browseFiles">Browse…</button>
+                </div>
+                <textarea id="sourcePaths" name="sourcePaths" rows="2" wrap="off" spellcheck="false" autocomplete="off"
+                          autocapitalize="off" aria-describedby="filesHint checkList err-sourcePaths"
+                          placeholder="Click Browse… or paste paths here, one per line"></textarea>
+                <p class="hint" id="filesHint">Pick the files with <strong>Browse…</strong>, or paste their paths, one per line.</p>
+                <p class="notice" id="dropNotice" hidden></p>
+                <ul class="check-list" id="checkList"></ul>
+                <div class="error" id="err-sourcePaths"></div>
+                <details class="help" id="pathHelp">
+                    <summary>How do I get the path?</summary>
+                    <p>The easiest way is <strong>Browse…</strong>: it shows the client drives exactly as the export PC sees them.</p>
+                    <div class="help-os" data-os="mac">
+                        <h3>On a Mac</h3>
+                        <ol>
+                            <li>In Finder, right-click the file (or Control-click it).</li>
+                            <li>Hold the <kbd>Option</kbd> key: the menu changes.</li>
+                            <li>Choose <strong>Copy “Poster.indd” as Pathname</strong>.</li>
+                            <li>Click in the box above and press <kbd>Cmd</kbd>+<kbd>V</kbd>.</li>
+                        </ol>
+                    </div>
+                    <div class="help-os" data-os="windows">
+                        <h3>On Windows</h3>
+                        <ol>
+                            <li>In File Explorer, hold <kbd>Shift</kbd> and right-click the file.</li>
+                            <li>Choose <strong>Copy as path</strong>.</li>
+                            <li>Click in the box above and press <kbd>Ctrl</kbd>+<kbd>V</kbd>.</li>
+                        </ol>
+                    </div>
+                    <p class="hint">Several files at once work too: select them all first, then copy. Dragging a file onto this page can't work, because browsers keep a file's location private.</p>
+                </details>
             </div>
 
             <fieldset class="field">
-                <legend>Output format</legend>
-                <div class="segmented" id="formatOptions" role="radiogroup"></div>
-                <p class="error" data-error-for="format"></p>
+                <legend>Export as</legend>
+                <div class="chips" id="formatOptions">
+                    <p class="hint">Loading formats…</p>
+                </div>
+                <p class="error" id="err-formats"></p>
             </fieldset>
 
-            <div class="field" data-show-for="pdf-print package-pdf">
-                <label for="pdfPreset">Adobe PDF preset</label>
+            <div class="field" data-needs="preset" hidden>
+                <label for="pdfPreset" id="presetLabel">PDF preset</label>
                 <div class="input-row">
-                    <input id="pdfPreset" name="pdfPreset" list="presetList" spellcheck="false" autocomplete="off"
-                           placeholder="[High Quality Print]">
-                    <button type="button" id="refreshPresets" class="btn btn-ghost" title="Ask InDesign on the export PC for its installed presets">Load from InDesign</button>
+                    <select id="presetSelect" hidden aria-describedby="presetHint err-pdfPreset"></select>
+                    <input id="pdfPreset" spellcheck="false" autocomplete="off" maxlength="200"
+                           aria-describedby="presetHint err-pdfPreset">
+                    <button type="button" id="refreshPresets" class="btn btn-ghost">Load from InDesign</button>
                 </div>
-                <datalist id="presetList"></datalist>
                 <p class="hint" id="presetHint">Type the exact preset name, or load the list from the export PC.</p>
-                <p class="error" data-error-for="pdfPreset"></p>
+                <p class="error" id="err-pdfPreset"></p>
             </div>
 
-            <div class="field" data-show-for="pdf-print pdf-interactive">
+            <div class="field" data-needs="pages" hidden>
                 <label for="pageRange">Pages</label>
-                <input id="pageRange" name="pageRange" value="All" spellcheck="false" autocomplete="off" maxlength="200">
-                <p class="hint">"All", or pages like <code>1-4, 7</code>. Use <code>+1-+3</code> for absolute page positions in documents with sections.</p>
-                <p class="error" data-error-for="pageRange"></p>
+                <input id="pageRange" value="All" spellcheck="false" autocomplete="off" maxlength="200" aria-describedby="pagesHint err-pageRange">
+                <p class="hint" id="pagesHint">Leave as “All”, or type pages like <code>1-4, 7</code> (the numbers in InDesign's Pages panel). <code>+1-+3</code> means the file's 1st to 3rd page, whatever the section numbering.</p>
+                <p class="error" id="err-pageRange"></p>
             </div>
 
-            <div class="field checks" data-show-for="pdf-print">
-                <label class="check"><input type="checkbox" name="useDocumentBleed" checked> Include bleed <span class="muted">(document bleed settings)</span></label>
-                <label class="check"><input type="checkbox" name="includeSlug"> Include slug area</label>
+            <div class="field checks" data-needs="bleed" hidden>
+                <label class="check"><input type="checkbox" id="useDocumentBleed" checked> Include bleed <span class="muted">(as set in the document)</span></label>
+                <label class="check"><input type="checkbox" id="includeSlug"> Include slug area</label>
             </div>
 
-            <div class="field checks" data-show-for="package">
-                <label class="check"><input type="checkbox" name="packageIncludeIdml" checked> Include IDML</label>
-                <label class="check"><input type="checkbox" name="packageIncludePdf" id="packageIncludePdf"> Include PDF <span class="muted">(uses the preset above)</span></label>
-            </div>
+            <fieldset class="field checks" data-needs="package" hidden>
+                <legend>Package also contains</legend>
+                <label class="check"><input type="checkbox" id="packageIncludeIdml" checked> IDML <span class="muted">(opens in older InDesign versions)</span></label>
+                <label class="check"><input type="checkbox" id="packageIncludePdf"> PDF <span class="muted">(uses the PDF preset)</span></label>
+            </fieldset>
 
-            <details class="field advanced">
-                <summary>Output location &amp; checks</summary>
-                <div class="field">
-                    <label for="outputFolder">Save to folder <span class="muted">(optional)</span></label>
-                    <input id="outputFolder" name="outputFolder" spellcheck="false" autocomplete="off"
-                           placeholder="Same folder as the InDesign file">
-                    <p class="error" data-error-for="outputFolder"></p>
-                </div>
-                <div class="checks">
-                    <label class="check"><input type="checkbox" name="overwrite"> Replace an existing file with the same name <span class="muted">(otherwise saved as "Name (2)")</span></label>
-                    <label class="check"><input type="checkbox" name="failOnMissing"> Don't export if links or fonts are missing</label>
+            <details class="field more" id="moreOptions">
+                <summary>Where to save &amp; checks</summary>
+                <div class="more-body">
+                    <div class="field">
+                        <label for="outputFolder">Save to folder <span class="muted">(optional)</span></label>
+                        <div class="input-row">
+                            <input id="outputFolder" spellcheck="false" autocomplete="off" maxlength="1024"
+                                   placeholder="Next to each InDesign file" aria-describedby="folderCheck err-outputFolder">
+                            <button type="button" class="btn btn-ghost" id="browseFolder">Choose…</button>
+                        </div>
+                        <p class="check-line" id="folderCheck"></p>
+                        <p class="error" id="err-outputFolder"></p>
+                    </div>
+                    <div class="checks">
+                        <label class="check"><input type="checkbox" id="overwrite"> Replace existing files with the same name <span class="muted">(otherwise it's saved as “Name (2)”)</span></label>
+                        <label class="check"><input type="checkbox" id="failOnMissing"> Don't export if links or fonts are missing</label>
+                    </div>
                 </div>
             </details>
 
-            <p class="error form-error" data-error-for="form" role="alert"></p>
+            <div class="summary" id="summary" aria-describedby="summaryWhere">
+                <p class="summary-where" id="summaryWhere">Saved next to each InDesign file</p>
+                <p class="summary-options" id="summaryOptions" hidden></p>
+                <button type="button" class="btn-link" id="useSourceFolder" hidden>Save next to the InDesign files instead</button>
+            </div>
+
+            <div class="error form-error" id="err-form"></div>
             <button type="submit" class="btn btn-primary" id="submitBtn">Add to queue</button>
+
+            <label class="check small sound"><input type="checkbox" id="soundOn"> Play a sound when my export finishes <span class="muted">(while this page is open)</span></label>
         </form>
     </section>
 
     <!-- ================= Queue dashboard ================= -->
-    <section class="panel panel-wide" aria-labelledby="queueTitle">
+    <section class="panel queue-panel" aria-labelledby="queueTitle">
         <div class="queue-head">
-            <h2 id="queueTitle">Queue</h2>
-            <label class="check small"><input type="checkbox" id="mineOnly"> Only my jobs</label>
+            <h2 id="queueTitle" tabindex="-1">Queue</h2>
+            <div class="queue-tools">
+                <input type="search" id="search" placeholder="Search file or person…" aria-label="Search the queue by file or person" autocomplete="off" spellcheck="false">
+                <label class="check small"><input type="checkbox" id="mineOnly"> Only my jobs</label>
+            </div>
         </div>
-        <nav class="tabs" id="tabs" role="tablist">
-            <button role="tab" data-filter="all" aria-selected="true">All <span class="count" data-count="all"></span></button>
-            <button role="tab" data-filter="pending">Pending <span class="count" data-count="pending"></span></button>
-            <button role="tab" data-filter="processing">Processing <span class="count" data-count="processing"></span></button>
-            <button role="tab" data-filter="completed">Completed <span class="count" data-count="completed"></span></button>
-            <button role="tab" data-filter="failed">Failed <span class="count" data-count="failed"></span></button>
-        </nav>
-        <ol class="jobs" id="jobList" aria-live="polite"></ol>
-        <p class="empty" id="emptyState" hidden>No jobs here yet.</p>
+
+        <section class="strip" id="strip" aria-labelledby="stripTitle" hidden>
+            <div class="strip-head">
+                <h3 id="stripTitle">Your exports</h3>
+                <button type="button" class="btn-link" id="stripClear">Dismiss all</button>
+            </div>
+            <ul class="strip-list" id="stripList"></ul>
+        </section>
+
+        <div class="filters" id="filters" role="group" aria-label="Show">
+            <button type="button" data-filter="all" aria-pressed="true">All <span class="count" data-count="all"></span></button>
+            <button type="button" data-filter="pending" aria-pressed="false">Waiting <span class="count" data-count="pending"></span></button>
+            <button type="button" data-filter="processing" aria-pressed="false">Exporting <span class="count" data-count="processing"></span></button>
+            <button type="button" data-filter="completed" aria-pressed="false">Done <span class="count" data-count="completed"></span></button>
+            <button type="button" data-filter="failed" aria-pressed="false">Failed <span class="count count-bad" data-count="failed"></span></button>
+        </div>
+
+        <div class="list-state" id="listState">
+            <p id="listStateText">Connecting to the export PC…</p>
+            <button type="button" class="btn btn-small" id="listStateBtn" hidden></button>
+        </div>
+        <ol class="jobs" id="jobList" aria-labelledby="queueTitle"></ol>
+        <div class="older-row">
+            <button type="button" class="btn" id="showOlder" hidden>Show older jobs</button>
+        </div>
     </section>
 </main>
 
-<div class="toast" id="toast" role="status" hidden></div>
+<footer class="foot">
+    <p id="lanLine" hidden>Designers open this page at <code id="lanUrl"></code> <button type="button" class="btn-link" id="copyLan">Copy</button></p>
+    <p class="muted" id="versionLine"></p>
+</footer>
 
-<dialog id="keyDialog">
+<div class="toasts" id="toasts"></div>
+<div class="visually-hidden" id="announcer" aria-live="polite" aria-atomic="true"></div>
+
+<dialog id="keyDialog" aria-labelledby="keyTitle" aria-describedby="keyText">
     <form method="dialog" id="keyForm">
-        <h2>Access key</h2>
-        <p>This export queue is protected. Enter the office access key.</p>
+        <h2 id="keyTitle">Access key</h2>
+        <p id="keyText">This export queue is protected. Enter the office access key; the browser remembers it.</p>
+        <label for="accessKey">Access key</label>
         <input id="accessKey" type="password" autocomplete="current-password" required>
         <p class="error" id="keyError"></p>
-        <button class="btn btn-primary" value="ok">Continue</button>
+        <div class="dialog-buttons">
+            <button type="submit" class="btn" value="cancel" formnovalidate>Cancel</button>
+            <button type="submit" class="btn btn-accent" value="ok">Continue</button>
+        </div>
     </form>
 </dialog>
 
-<template id="jobTemplate">
-    <li class="job">
-        <div class="job-main">
-            <span class="pill job-status"></span>
-            <div class="job-title">
-                <strong class="job-file"></strong>
-                <span class="job-meta"></span>
-            </div>
-            <div class="job-actions"></div>
+<dialog id="browseDialog" class="browse" aria-labelledby="browseTitle">
+    <div class="browse-head">
+        <h2 id="browseTitle">Choose InDesign files</h2>
+        <button type="button" class="btn btn-ghost btn-icon" id="browseClose" aria-label="Close">×</button>
+    </div>
+    <nav class="crumbs" aria-label="Folder path"><ol id="browseCrumbs"></ol></nav>
+    <div class="browse-tools" id="browseTools" hidden>
+        <input type="search" id="browseFilter" placeholder="Filter this folder…" aria-label="Filter this folder" autocomplete="off" spellcheck="false">
+        <div class="sort" role="group" aria-label="Sort files">
+            <button type="button" data-sort="name" aria-pressed="true">Name</button>
+            <button type="button" data-sort="newest" aria-pressed="false">Newest</button>
         </div>
-        <div class="job-detail"></div>
-    </li>
-</template>
+    </div>
+    <div class="browse-body" id="browseBody" tabindex="-1"></div>
+    <div class="browse-foot">
+        <p class="browse-status" id="browseStatus"></p>
+        <div class="dialog-buttons">
+            <button type="button" class="btn" id="browseCancel">Cancel</button>
+            <button type="button" class="btn btn-accent" id="browseOk" disabled>Add files</button>
+        </div>
+    </div>
+</dialog>
 </body>
 </html>
