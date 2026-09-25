@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Export Queue</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23ff3366'/%3E%3Ctext x='16' y='22' font-family='Arial' font-weight='700' font-size='15' text-anchor='middle' fill='white'%3EId%3C/text%3E%3C/svg%3E">
+    <link rel="stylesheet" href="styles.css">
+    <script type="module" src="app.js"></script>
+</head>
+<body>
+<header class="topbar">
+    <div class="brand">
+        <span class="logo" aria-hidden="true">Id</span>
+        <div>
+            <h1>Export Queue</h1>
+            <p class="subtitle">Send InDesign exports to the export PC</p>
+        </div>
+    </div>
+    <div class="system" aria-live="polite">
+        <span id="workerState" class="pill pill-muted">Connecting…</span>
+        <span id="connection" class="conn" title="Live updates"></span>
+    </div>
+</header>
+
+<main class="layout">
+    <!-- ================= Submission form ================= -->
+    <section class="panel" aria-labelledby="formTitle">
+        <h2 id="formTitle">New export</h2>
+        <form id="jobForm" novalidate>
+            <div class="field">
+                <label for="submittedBy">Your name</label>
+                <input id="submittedBy" name="submittedBy" autocomplete="name" maxlength="80" required>
+                <p class="error" data-error-for="submittedBy"></p>
+            </div>
+
+            <div class="field">
+                <label for="sourcePath">InDesign file</label>
+                <input id="sourcePath" name="sourcePath" spellcheck="false" autocomplete="off" required
+                       placeholder="\\NAS\Projects\Client\Campaign\Poster.indd">
+                <p class="hint" id="pathHint">Paste the full path of the .indd file on the network drive.</p>
+                <p class="error" data-error-for="sourcePath"></p>
+            </div>
+
+            <fieldset class="field">
+                <legend>Output format</legend>
+                <div class="segmented" id="formatOptions" role="radiogroup"></div>
+                <p class="error" data-error-for="format"></p>
+            </fieldset>
+
+            <div class="field" data-show-for="pdf-print package-pdf">
+                <label for="pdfPreset">Adobe PDF preset</label>
+                <div class="input-row">
+                    <input id="pdfPreset" name="pdfPreset" list="presetList" spellcheck="false" autocomplete="off"
+                           placeholder="[High Quality Print]">
+                    <button type="button" id="refreshPresets" class="btn btn-ghost" title="Ask InDesign on the export PC for its installed presets">Load from InDesign</button>
+                </div>
+                <datalist id="presetList"></datalist>
+                <p class="hint" id="presetHint">Type the exact preset name, or load the list from the export PC.</p>
+                <p class="error" data-error-for="pdfPreset"></p>
+            </div>
+
+            <div class="field" data-show-for="pdf-print pdf-interactive">
+                <label for="pageRange">Pages</label>
+                <input id="pageRange" name="pageRange" value="All" spellcheck="false" autocomplete="off" maxlength="200">
+                <p class="hint">"All", or pages like <code>1-4, 7</code>. Use <code>+1-+3</code> for absolute page positions in documents with sections.</p>
+                <p class="error" data-error-for="pageRange"></p>
+            </div>
+
+            <div class="field checks" data-show-for="pdf-print">
+                <label class="check"><input type="checkbox" name="useDocumentBleed" checked> Include bleed <span class="muted">(document bleed settings)</span></label>
+                <label class="check"><input type="checkbox" name="includeSlug"> Include slug area</label>
+            </div>
+
+            <div class="field checks" data-show-for="package">
+                <label class="check"><input type="checkbox" name="packageIncludeIdml" checked> Include IDML</label>
+                <label class="check"><input type="checkbox" name="packageIncludePdf" id="packageIncludePdf"> Include PDF <span class="muted">(uses the preset above)</span></label>
+            </div>
+
+            <details class="field advanced">
+                <summary>Output location &amp; checks</summary>
+                <div class="field">
+                    <label for="outputFolder">Save to folder <span class="muted">(optional)</span></label>
+                    <input id="outputFolder" name="outputFolder" spellcheck="false" autocomplete="off"
+                           placeholder="Same folder as the InDesign file">
+                    <p class="error" data-error-for="outputFolder"></p>
+                </div>
+                <div class="checks">
+                    <label class="check"><input type="checkbox" name="overwrite"> Replace an existing file with the same name <span class="muted">(otherwise saved as "Name (2)")</span></label>
+                    <label class="check"><input type="checkbox" name="failOnMissing"> Don't export if links or fonts are missing</label>
+                </div>
+            </details>
+
+            <p class="error form-error" data-error-for="form" role="alert"></p>
+            <button type="submit" class="btn btn-primary" id="submitBtn">Add to queue</button>
+        </form>
+    </section>
+
+    <!-- ================= Queue dashboard ================= -->
+    <section class="panel panel-wide" aria-labelledby="queueTitle">
+        <div class="queue-head">
+            <h2 id="queueTitle">Queue</h2>
+            <label class="check small"><input type="checkbox" id="mineOnly"> Only my jobs</label>
+        </div>
+        <nav class="tabs" id="tabs" role="tablist">
+            <button role="tab" data-filter="all" aria-selected="true">All <span class="count" data-count="all"></span></button>
+            <button role="tab" data-filter="pending">Pending <span class="count" data-count="pending"></span></button>
+            <button role="tab" data-filter="processing">Processing <span class="count" data-count="processing"></span></button>
+            <button role="tab" data-filter="completed">Completed <span class="count" data-count="completed"></span></button>
+            <button role="tab" data-filter="failed">Failed <span class="count" data-count="failed"></span></button>
+        </nav>
+        <ol class="jobs" id="jobList" aria-live="polite"></ol>
+        <p class="empty" id="emptyState" hidden>No jobs here yet.</p>
+    </section>
+</main>
+
+<div class="toast" id="toast" role="status" hidden></div>
+
+<dialog id="keyDialog">
+    <form method="dialog" id="keyForm">
+        <h2>Access key</h2>
+        <p>This export queue is protected. Enter the office access key.</p>
+        <input id="accessKey" type="password" autocomplete="current-password" required>
+        <p class="error" id="keyError"></p>
+        <button class="btn btn-primary" value="ok">Continue</button>
+    </form>
+</dialog>
+
+<template id="jobTemplate">
+    <li class="job">
+        <div class="job-main">
+            <span class="pill job-status"></span>
+            <div class="job-title">
+                <strong class="job-file"></strong>
+                <span class="job-meta"></span>
+            </div>
+            <div class="job-actions"></div>
+        </div>
+        <div class="job-detail"></div>
+    </li>
+</template>
+</body>
+</html>

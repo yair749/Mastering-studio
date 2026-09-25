@@ -1,0 +1,30 @@
+{
+  "port": 8080,
+  "host": "0.0.0.0",
+  "accessKey": "",
+
+  "allowedRoots": [
+    "\\\\NAS\\Projects",
+    "P:\\"
+  ],
+  "pathMappings": [
+    { "from": "/Volumes/Projects", "to": "\\\\NAS\\Projects" },
+    { "from": "smb://nas/Projects", "to": "\\\\NAS\\Projects" }
+  ],
+  "defaultOutputSubfolder": "",
+
+  "indesign": {
+    "executor": "indesign",
+    "progId": "InDesign.Application",
+    "jobTimeoutMinutes": 60,
+    "killInDesignOnTimeout": true
+  },
+
+  "retentionDays": 30,
+
+  "ntfy": {
+    "server": "",
+    "topic": "",
+    "notifyOn": ["failed"]
+  }
+}
