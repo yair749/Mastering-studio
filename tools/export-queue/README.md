@@ -1,174 +1,178 @@
 # InDesign Export Queue
 
-Designers send InDesign export jobs from their own computers to the dedicated **export PC**. They open a web page on the office network, fill in the file path and export settings, and follow progress live. The export PC runs one job at a time, so InDesign is never overloaded, and nobody has to touch the export PC.
+Designers send InDesign exports from their own Mac or PC to the dedicated **export PC**. They open a web page, pick the files with **Browse…** (or paste paths), tick the formats, and watch the job live. When it's done they click **Open** or **Download**. The export PC runs one job at a time, so InDesign is never overloaded, and nobody has to touch the export PC.
 
-![Dashboard](docs/dashboard.png)
+![The page designers use](docs/dashboard.png)
 
 ---
 
-## 1. Tech stack (all free and open source)
+## 1. Set up or upgrade the export PC
 
-| Layer | Choice | Why |
-|---|---|---|
-| Runtime | **Node.js 22 LTS or newer** | Free. Runs natively on Windows and includes a SQLite database, so there's no database server to install. |
-| Web server / API | **Express 5** ([expressjs/express](https://github.com/expressjs/express), 69k★) | The standard Node web framework. It's the only third-party dependency. |
-| Queue + job history | **SQLite, built into Node** (`node:sqlite`) | Jobs survive restarts and power cuts, and a job is claimed with one atomic database update, so it can never run twice. |
-| Live updates | **Server-Sent Events** (a browser standard) | The dashboard updates instantly with no polling and no extra library, and browsers reconnect by themselves. |
-| Web UI | **Plain HTML, CSS and JavaScript** | Custom-built for this workflow. No build step, no framework and no CDN, so it works offline on the LAN and there's nothing to go out of date. |
-| InDesign control | **PowerShell → InDesign COM (`DoScript`) → ExtendScript** | Adobe's official Windows automation interface. The export runs synchronously, so "done" really means done. |
+> **Sandbox first:** put the zip through your security check before you extract it. Check its SHA-256 checksum matches the one you were given: in PowerShell, `Get-FileHash .\ExportQueue.zip`. If Node.js has to be installed, the installer gets it with Windows' own `winget` (the official, signed OpenJS Foundation package). The only library, Express, is installed at the exact versions pinned in `package-lock.json`.
 
-**Considered and rejected:**
-- **BullMQ (9.4k★):** needs a Redis or PostgreSQL server running on the export PC. That's one more service to install and keep alive, for no benefit with a single worker.
-- **React or Vue:** add a build pipeline for a two-screen tool.
-- **Existing render farms:** [nexrender](https://github.com/inlife/nexrender) (1.8k★) is for After Effects only, and nothing with 1000+ stars exists for InDesign. Its job-lifecycle design inspired the queue here, but its code isn't used.
+1. **Log in as the Windows user who runs InDesign** (on the export PC that's `ONE_Legacy`).
+2. **Extract the zip onto the Desktop**, so the files end up in `Desktop\ExportQueue`. If you're upgrading, extract over the old folder and choose **Replace the files**. Your settings and job history are kept.
+3. Open `ExportQueue\windows` and **double-click `Install.cmd`**. Don't use "Run as administrator"; if you do, it restarts itself as the normal user.
+4. **When Windows asks "Do you want to allow this app to make changes?", click Yes.** It only asks when something needs changing. That permission is used for three things:
+   - opening the firewall so office computers can reach the page (it works even if Windows thinks the office network is "Public", but only for computers on the office network);
+   - removing any rule that blocks Node.js (Windows creates one if someone clicked Cancel on its firewall question);
+   - stopping the PC from going to sleep on mains power (a sleeping PC exports nothing; the screen can still turn off).
+5. At the end, the window shows the **address designers open**, for example `http://192.168.1.20:8080/`. It's already copied, so paste it into an email or chat to the staff. If the window says the address came from the router, ask whoever manages the router to reserve it for the export PC, so it never changes.
 
-## 2. Architecture
+The installer also does the following by itself:
+- finds the client drives mapped on this PC (M:, N:, X: …) and the names Macs use for them (`/Volumes/MG_Mega` …);
+- makes the queue start by itself at every login, in the background, with no window that could be closed by mistake;
+- creates a desktop shortcut **Export Queue** and a Start menu folder **InDesign Export Queue**.
 
-```
- Designer PCs / Macs (browser)                     Export PC (Windows, logged-in user)
- ┌──────────────────────────┐   HTTP + live      ┌───────────────────────────────────────────┐
- │  http://EXPORT-PC:8080   │ ◀────events──────▶ │ Node.js  src/server.js                    │
- │  • submission form       │                    │   API (Express) ──▶ SQLite queue (jobs.db)│
- │  • queue dashboard       │                    │   worker: 1 job at a time                 │
- └──────────────────────────┘                    │      │                                    │
-                                                  │      ▼ powershell run-indesign.ps1        │
-                                                  │   InDesign COM DoScript                   │
-                                                  │      ▼                                    │
-                                                  │   indesign-worker.jsx (opens, exports,    │
-                                                  │   verifies, closes) ──▶ result JSON       │
-                                                  └───────────────────────────────────────────┘
-                                                         reads/writes \\NAS\Projects\...
-```
+Running `Install.cmd` again is always safe. Do it after you map a new client drive: the drive is added and nothing else changes.
 
-| File | Role |
+**When upgrading:** if an export is running in InDesign, the installer waits for it to finish ("Waiting for job #12 to finish…"). Jobs that are waiting stay in the queue and start again after the upgrade.
+
+**Leave the PC logged in**, or set Windows to sign in automatically. InDesign needs a logged-in desktop, so it can't run as a hidden Windows service.
+
+### Owner controls (Start menu > InDesign Export Queue)
+
+| Shortcut | What it does |
 |---|---|
-| `src/server.js` | Entry point: config, database, worker, web server, graceful shutdown, crash → restart |
-| `src/api.js` | REST API + live event stream, validation errors returned per form field |
-| `src/db.js` | SQLite job store and queue (atomic claim, crash recovery, history clean-up) |
-| `src/worker.js` | Runs pending jobs in order; decides output file names without overwriting |
-| `src/indesign.js` | Talks to InDesign through PowerShell; one call at a time, with a timeout |
-| `src/paths.js` | Translates Mac/other-drive paths to the export PC's paths; refuses anything outside the allowed drives |
-| `src/jobs.js` | The submission rules: formats, presets, page ranges, bleed/slug, package options |
-| `scripts/run-indesign.ps1` | COM bridge: connects to (or starts) InDesign and runs the ExtendScript |
-| `scripts/indesign-worker.jsx` | Inside InDesign: open → check links/fonts → export → verify output → close |
-| `public/` | The web UI (form + dashboard) |
-| `windows/` | Install, start (auto-restart) and uninstall scripts for the export PC |
+| **Open Export Queue** | Opens the page on the export PC |
+| **Check Export Queue** | A checklist with a fix for every problem: Node.js, queue running, InDesign answering, each client drive, firewall, address, start at login, sleep |
+| **Restart Export Queue** | Restarts it (the export in InDesign finishes first) |
+| **Stop Export Queue** | Stops it until the next login or Restart (the export in InDesign finishes first) |
+| **Export Queue log folder** | `server.log` (what the queue did) and `launcher.log` (starts, stops, restarts) |
 
-### How a job runs
-1. **Submit:** the designer submits. The server translates the path, checks it's on an allowed drive, and checks the `.indd` file exists **before** queuing, so typos fail instantly and don't leave a failed job for later.
-2. **Claim:** the worker claims the oldest pending job (an atomic update, so it can't be claimed twice) and picks an output name. By default that's next to the source, and it never overwrites unless asked: `Poster.pdf`, then `Poster (2).pdf`, and so on.
-3. **Hand-off to InDesign:** the job goes to InDesign as a JSON file. InDesign's dialogs are switched off during the job, so a missing-font dialog can't block the unattended PC.
-4. **Checks before exporting:** InDesign checks for missing links and fonts. They're reported as warnings, or they stop the job if "Don't export if links or fonts are missing" is ticked.
-5. **Export:**
-   - **PDF (Print)** applies the chosen preset through a temporary copy (built-in presets are locked), so bleed, slug and page range can be set per job. The copy is removed afterwards.
-   - **PDF (Interactive)** and **IDML** use InDesign's own export.
-   - **Package** uses *File → Package*: fonts, links and a report, plus IDML and/or PDF if chosen.
-6. **Verify:** the job only counts as **completed** if the output really exists and was rewritten. The document is closed without saving (unless it was already open on the export PC, in which case it's left open).
-7. **Live dashboard:** every open dashboard updates instantly. The submitter gets a pop-up when their job completes or fails, and failures can also go to ntfy.
+If something goes wrong while nobody is looking, a **message box** appears on the export PC saying what happened and what to do. For example: the settings need fixing, Node.js is missing, another program took the port, or the queue keeps stopping.
 
-## 3. Setting up the export PC
+To remove it, double-click `windows\Uninstall.cmd`. The settings and the job history are kept unless you run it with `-RemoveData`.
 
-> **Sandbox first:** put the Node.js installer and this folder through your security check before installing. Node.js is signed by the OpenJS Foundation; after installation, `npm ci` installs exactly the versions pinned in `package-lock.json`.
+## 2. What designers do
 
-1. **Copy this folder** to the export PC, e.g. to the Desktop.
-2. **Log in as the Windows user who runs InDesign.** InDesign must be installed and signed in for that user.
-3. Right-click **`windows\Install.cmd`** → **Run as administrator**. Administrator rights are only needed for the firewall rule. It does everything else by itself:
-   - installs Node.js with winget if it's missing (Node.js is free and signed by the OpenJS Foundation);
-   - installs the dependencies;
-   - finds this PC's network drives and writes `config.json`, including the `/Volumes/<share>` paths Macs use (it only asks for the drive address if none is mapped);
-   - makes the queue start at every login;
-   - opens the port for the office network;
-   - starts the queue.
-4. **Test it from a designer's computer:**
-   - Open `http://EXPORT-PC:8080/` (the address is shown in the queue window).
-   - Click **Load from InDesign** under the preset field. This checks the connection to InDesign.
-   - Submit a small export.
+1. Open the address (bookmark it) and type your name once.
+2. Click **Browse…**, open a client drive and its folders, tick the InDesign files and click **Add**. You can also paste paths, one per line:
+   - **Mac:** in Finder, right-click the file, hold **Option**, then **Copy "…" as Pathname**.
+   - **Windows:** Shift + right-click the file, then **Copy as path**.
 
-**For a fully unattended PC:** set Windows to sign in automatically, or leave the user logged in, and disable sleep. InDesign needs a logged-in desktop session, so it can't run as a background Windows service. Everything else starts by itself at login.
+   Each file is checked straight away: **✓ Found** or a plain-language reason, such as "This file is on your own computer…".
+3. Tick one or more formats: **PDF (Print)**, **PDF (Interactive)**, **IDML** or **Package**. Pick the PDF preset, pages, and bleed/slug. **Where to save & checks** lets you pick another folder, replace existing files, or refuse to export when links or fonts are missing.
+4. Click **Add N exports to queue**. The button says how many jobs you're adding: files × formats.
+5. Follow it live in **Your exports** at the top of the queue. The tab title shows a ✓ or ! count, and you can turn on a sound.
+6. When it's done:
+   - **Open** or **Download** the file.
+   - **Copy path** copies the path in your own computer's style (`/Volumes/…` on a Mac), with a tip on how to open it.
+   - **Run again** or **Edit & send again** reuse the settings.
+   - **Cancel** removes a job that hasn't started.
 
-### `config.json`
+![Choosing files](docs/browse.png)
 
-| Setting | Meaning |
-|---|---|
-| `port`, `host` | Where the web page is served. `0.0.0.0` means reachable from the whole office network. |
-| `accessKey` | Optional shared password. If set, each browser is asked for it once. |
-| `allowedRoots` | Folders jobs may read from and write to, e.g. `"\\\\NAS\\Projects"` or `"P:\\"`. Anything else is refused. In JSON, every `\` is written `\\`. |
-| `pathMappings` | How designers' paths map to the export PC. For example, Mac users see `/Volumes/Projects`, while the export PC sees `\\NAS\Projects`. The longest matching `from` wins. |
-| `defaultOutputSubfolder` | `""` saves next to the InDesign file. A name like `"Exports"` saves in that subfolder, which is created if needed. |
-| `indesign.executor` | `"indesign"` (real). `"simulate"` is only for trying the system out, or for development, on a PC without InDesign. |
-| `indesign.progId` | `"InDesign.Application"` uses the installed version. Use `"InDesign.Application.2026"` to force a specific one when several are installed. |
-| `indesign.jobTimeoutMinutes` | How long one export may take (default 60). |
-| `indesign.killInDesignOnTimeout` | `true` (default): a hung InDesign is closed so the queue carries on. The job is marked failed with the reason. |
-| `retentionDays` | How long finished jobs stay in the history (default 30). |
-| `ntfy` | Optional push notifications for `failed` and/or `completed` jobs. If the **InDesign export notifier** (`tools/indesign-export-notify`) is installed on this PC, its channel is used automatically for failures. Successful exports are already announced by that notifier. |
+It works on phones too:
 
-## 4. Using it (designers)
+![On a phone](docs/mobile.png)
 
-1. Open `http://EXPORT-PC:8080/` (bookmark it). Enter your name once; the browser remembers it.
-2. Paste the path of the `.indd` file:
-   - **Windows:** Shift + right-click the file → **Copy as path**.
-   - **Mac:** in Finder, right-click the file, hold **Option**, and choose **Copy "…" as Pathname**.
-3. Choose the format. For PDF (Print), pick a preset; the list comes from the export PC's InDesign.
-4. Set pages (`All`, `1-4, 7`, or `+1-+3` for absolute page positions in documents with sections) and bleed/slug.
-5. Click **Add to queue** and follow the job in the dashboard. **Only my jobs** filters the list to your own.
-   - **Failed** jobs show InDesign's reason.
-   - **Warnings** list missing links and fonts.
-   - **Run again** re-queues a finished job.
-   - **Cancel** removes a waiting job.
-
-## 5. Reliability and safety
+## 3. How it keeps working (and tells you when it can't)
 
 | Situation | What happens |
 |---|---|
-| Server crashes | `start.cmd` restarts it within 10 s. A job that was running is marked **failed** ("server stopped while this job was running"), never silently re-run. Waiting jobs are kept. |
-| PC restarts | The queue starts at login. Waiting jobs are still there. |
-| InDesign hangs or shows an unexpected dialog | After `jobTimeoutMinutes` the job fails with a clear reason. InDesign is closed (if configured) so the next job can run. |
-| Network drive unavailable | The path is checked when the job is submitted **and** again when it runs, and a clear message is shown. |
-| Wrong or missing preset | The job fails and lists the presets that *are* installed. |
+| InDesign is closed, starting, or showing a message | Jobs **wait** instead of failing. The page says "InDesign can't be reached on the export PC. Jobs will wait…". The queue retries every minute and carries on by itself. |
+| The queue program stops unexpectedly | It restarts within 10 seconds. A job that was running is marked **failed** with the reason, and is never silently re-run. If it keeps stopping, a message box appears once, and it keeps retrying every minute. |
+| PC restarts | The queue starts at login, and waiting jobs are still there. |
+| Upgrade | The export in InDesign finishes first, and waiting jobs are kept. Settings, job history and the notification link are kept. |
+| The file is open on the export PC with unsaved changes | The job fails with "Close it there, then run the export again". An old version is never exported. |
+| Links placed on a Mac (`/Volumes/…`) | They're relinked to the same files on the export PC before exporting, and the job shows a warning that says so. |
+| A client drive is disconnected | Checked every minute and shown on the page. The file is checked when you add the job and again when it runs. |
+| InDesign hangs | After `jobTimeoutMinutes` the job fails with the reason. InDesign is closed so the next job can run. |
 | InDesign says "done" but no file appeared | The job is marked **failed**, never "completed". |
-| Server unreachable | The page shows "Offline", and keeps trying to reconnect. |
-| Started twice | The second copy explains that the queue is already running, and stops. |
-| Security | Only paths inside `allowedRoots` are accepted, and `..` is refused. Pages are protected against script injection (strict content security policy, no HTML from job data). There's an optional access key. |
-| Logs | `data\logs\server.log` (rotated, 3 × 5 MB). |
+| The export PC is off or unreachable | The page says so and reconnects by itself. |
+| Wrong preset | Checked when the job is added. The job never starts with a preset that isn't installed. |
+| Safety | Only files on the client drives are accepted, and `..` is refused. The page is protected against script injection. Stop/Restart only work on the export PC itself. There's an optional access key. |
 
-## 6. Troubleshooting
+## 4. Troubleshooting
+
+Start with **Check Export Queue**. It names the problem and the fix.
 
 | Problem | Fix |
 |---|---|
-| Designers can't open the page | Run `windows\Install.cmd` as administrator (firewall), or check the address shown in the queue window. |
-| "Could not start or connect to InDesign" | Open InDesign once by hand as this Windows user (licence and sign-in). If several versions are installed, set `indesign.progId`. |
-| "That location isn't on a drive the export PC is allowed to use" | Add the drive to `allowedRoots`, or add a `pathMappings` entry for how that designer sees it. |
-| "doesn't exist or the export PC can't see it" | The export PC must reach the same share. Check it in File Explorer **as the queue's Windows user**. UNC paths (`\\NAS\...`) are more reliable than drive letters. |
-| Jobs time out | Increase `indesign.jobTimeoutMinutes` for very large documents. Also check the export PC for an InDesign dialog, such as crash recovery after a forced close. |
+| Designers can't open the page | Double-click `Install.cmd` and click **Yes** (firewall). Use the address it shows, not the PC's name. The designer's computer must be on the office network. |
+| "InDesign can't be reached" | Open InDesign on the export PC, logged in as the same Windows user, and close any message it shows. |
+| "The export PC doesn't have a drive called …" | Map that drive on the export PC in File Explorer (tick **Reconnect at sign-in**), then double-click `Install.cmd` again. |
+| The address changed | Ask for the router to reserve the export PC's address. Until then, **Check Export Queue** shows the current one. |
+| A message box about the settings | Open `config.json` in Notepad and fix the line it names. The installer's previous version is saved as `config.json.bak`. |
 
-## 7. What is tested
+### `config.json` (created and updated by the installer)
 
-`npm test` runs 32 automated tests:
-- **Server end to end:** real HTTP, a real database and real files, with a stand-in for InDesign. Covers queue order, output naming, validation, cancel and re-run, live events, the access key, crash recovery, and config errors.
-- **Path rules:** Windows, Mac and `smb://` paths, mappings, and refusal of anything outside the allowed drives.
-- **`indesign-worker.jsx`:** run against a stand-in for InDesign's scripting model. Covers preset copying, bleed, slug and page range, missing links and fonts, package arguments, output checks, and cleanup.
-- **The PowerShell bridge code:** success, InDesign errors, crashes, missing results, and timeouts.
+| Setting | Meaning |
+|---|---|
+| `port`, `host` | Where the page is served (`8080`, all network cards). |
+| `publicUrl` | Leave `""`: the address is worked out from the network. Set it (e.g. `"http://192.168.1.20:8080/"`) to force the address shown to people. |
+| `accessKey` | Optional shared password; each browser asks for it once. |
+| `drives` | The client drives shown in **Browse…**: `{ "name": "MG_Mega", "path": "\\\\192.168.1.13\\MG_Mega", "letter": "M:" }`. |
+| `allowedRoots` | Folders jobs may use. Anything else is refused. In JSON, every `\` is written `\\`. |
+| `pathMappings` | How designers' paths map to the export PC, e.g. `/Volumes/MG_Mega` → `\\192.168.1.13\MG_Mega`. A Mac's second mount of the same share (`/Volumes/MG_Mega-1`) is understood too. |
+| `defaultOutputSubfolder` | `""` saves next to the InDesign file. A name like `"Exports"` saves in that subfolder. |
+| `indesign.executor` | `"indesign"` (real). `"simulate"` is only for trying it out without InDesign. |
+| `indesign.progId` | `"InDesign.Application"` uses the installed version. Use `"InDesign.Application.2026"` to force one version. |
+| `indesign.jobTimeoutMinutes`, `killInDesignOnTimeout` | How long one export may take (default 60), and whether a hung InDesign is closed. |
+| `retentionDays` | How long finished jobs stay in the history (default 30). |
+| `ntfy` | Optional phone notifications for `failed` and/or `completed` jobs. If the **InDesign export notifier** is installed, its channel is used automatically. It also says when jobs are waiting for InDesign. |
 
-The web UI was also checked in a real browser, in simulation mode, on desktop and phone sizes.
+## 5. How it's built (all free and open source)
 
-**Not tested yet:** real Adobe InDesign on a real Windows PC, which wasn't available in the development environment. Do the first real run with a copy of a small document:
-- Check each format once.
-- Look at the PDF's bleed and page range.
-- Try one package.
+| Layer | Choice | Why |
+|---|---|---|
+| Runtime | **Node.js 22.13+ LTS** | Free, and includes a SQLite database, so there's no database server to install. |
+| Web server | **Express 5** ([expressjs/express](https://github.com/expressjs/express), 69k★) | The standard Node web framework, and the only third-party library. |
+| Queue + history | **SQLite built into Node** | Jobs survive restarts and power cuts. A job is claimed with one atomic update, so it can never run twice. |
+| Live updates | **Server-Sent Events** | Instant updates with no polling, and browsers reconnect by themselves. |
+| Web page | **Plain HTML, CSS and JavaScript** | Custom-built for this workflow. No build step, no framework and no CDN. |
+| InDesign control | **PowerShell → InDesign COM (`DoScript`) → ExtendScript** | Adobe's official Windows automation. The export runs synchronously, so "done" really means done. |
+| Windows setup | **PowerShell 5.1** (built into Windows) | Nothing extra to install. It runs hidden in the background and shows message boxes for problems. |
 
-Report anything unexpected along with the job's error text.
+**Considered and rejected:**
+- **BullMQ (9.4k★):** needs a Redis server.
+- **React or Vue:** add a build pipeline.
+- **Render farms:** [nexrender](https://github.com/inlife/nexrender) (1.8k★) is After Effects only; nothing with 1000+ stars exists for InDesign.
+- **NSSM / Windows services:** InDesign needs the logged-in desktop.
 
-**Known limits:**
-- The export is one step inside InDesign, so progress is shown as elapsed time, not a percentage.
-- Page ranges use InDesign's page names (section numbering).
-- Dialogs that InDesign shows *at start-up* (such as crash recovery) appear before any script runs. After a forced close, check the export PC once.
+| File | Role |
+|---|---|
+| `src/server.js` | Start-up, health, graceful stop (exit code 5 = stopped for maintenance) |
+| `src/api.js` | REST API, live events, file browser, downloads, localhost-only maintenance (`/api/admin/drain`, `resume`, `shutdown`) |
+| `src/db.js`, `src/worker.js` | SQLite queue and the one-at-a-time worker (waits when InDesign is unreachable) |
+| `src/paths.js`, `src/browse.js`, `src/drives.js` | Mac/Windows path translation and refusal messages, folder browsing, drive checks |
+| `src/indesign.js`, `scripts/run-indesign.ps1` | The bridge to InDesign (retries while InDesign is busy) |
+| `scripts/indesign-worker.jsx` | Inside InDesign: open fresh → relink Mac links → check → export → verify → close |
+| `public/` | The web page |
+| `windows/Install-ExportQueue.ps1` | Setup, upgrade, uninstall (`Install.cmd`, `Uninstall.cmd`) |
+| `windows/launcher.ps1` | Keeps the queue running in the background; writes `launcher.log`, shows message boxes |
+| `windows/Control-ExportQueue.ps1`, `Check-ExportQueue.ps1` | The Start menu's Start/Stop/Restart and Check |
+
+## 6. What is tested
+
+- `npm test`: 52 automated tests.
+  - The server end to end, with real HTTP, a real database and real files, and a stand-in for InDesign: batches, live checks, browse, downloads, preset checks, waiting for InDesign, maintenance stop, config errors, upgrades from 1.x settings.
+  - The path rules.
+  - `indesign-worker.jsx` against a stand-in for InDesign's scripting model: presets, bleed and slug, open documents, Mac relinking, packages.
+  - The PowerShell bridge.
+- `npm run test:windows` (needs PowerShell 7 `pwsh`): 37 checks of the Windows scripts, run on Linux.
+  - The settings merge (new install, upgrade from 1.x, new drive, re-run changes nothing).
+  - The address choice.
+  - Every launcher exit code and message box.
+  - A real start → stop → start of the queue, where Stop waits for the running export.
+- A 1.x job database was opened by 2.0: the old jobs and their files are listed and downloadable.
+- The web page was checked in a real browser (simulation mode), at desktop and phone sizes and in dark mode: Browse, live checks, batches, waiting for InDesign, offline, cancel, search, Only my jobs, copy path (Mac style), open/download.
+
+**Not tested:** real Windows and real InDesign weren't available in development. That covers the firewall, UAC, shortcuts, message boxes and stopping a 1.x install on Windows, plus the exports themselves. Do the first real run with a copy of a small document:
+- check each format once;
+- look at a PDF's bleed and page range;
+- try one package.
+
+Run **Check Export Queue** after installing.
 
 ## Development
 
 ```
-npm install
+npm ci
 npm test
+npm run test:windows        # needs pwsh
 # Try it without InDesign: set "indesign": { "executor": "simulate" } and point
-# "allowedRoots" at a local folder, then:
+# "allowedRoots"/"drives" at local folders, then:
 npm start
 ```
