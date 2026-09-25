@@ -112,6 +112,14 @@ function New-QueueConfig($drives) {
 $config = Join-Path $AppDir "config.json"
 if (-not (Test-Path $config)) {
     $drives = @(Get-NetworkDrives)
+    if ($drives.Count -eq 0 -and (Test-Admin)) {
+        # Windows hides the user's mapped drives from "Run as administrator" windows.
+        Write-Host ""
+        Write-Host "Windows hides your network drives from administrator windows." -ForegroundColor Yellow
+        Write-Host "Close this window and double-click Install.cmd normally (not as administrator) first;" -ForegroundColor Yellow
+        Write-Host "run it as administrator afterwards only to open the firewall." -ForegroundColor Yellow
+        exit 1
+    }
     if ($drives.Count -eq 0) {
         Write-Host ""
         Write-Host "No mapped network drive was found on this PC." -ForegroundColor Yellow
@@ -153,7 +161,17 @@ if (Test-Admin) {
     Write-Host "right-click Install.cmd > Run as administrator once, or allow port $port for Node.js when Windows asks." -ForegroundColor Yellow
 }
 
-if (-not $NoStart) {
+function Test-QueueRunning {
+    $client = New-Object Net.Sockets.TcpClient
+    try { return $client.ConnectAsync("127.0.0.1", [int]$port).Wait(1500) } catch { return $false } finally { $client.Dispose() }
+}
+
+$ips = @(Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+    Where-Object { $_.IPAddress -notlike "127.*" -and $_.IPAddress -notlike "169.254.*" } | ForEach-Object { $_.IPAddress })
+$address = if ($ips.Count) { "http://$($ips[0]):$port/" } else { "http://$($env:COMPUTERNAME):$port/" }
+if (Test-QueueRunning) {
+    Write-Host "The queue is already running. Designers open: $address" -ForegroundColor Cyan
+} elseif (-not $NoStart) {
     Start-Process $StartCmd -WorkingDirectory $AppDir -WindowStyle Minimized
-    Write-Host "Started. Designers open: http://$($env:COMPUTERNAME):$port/" -ForegroundColor Cyan
+    Write-Host "Started. Designers open: $address" -ForegroundColor Cyan
 }
