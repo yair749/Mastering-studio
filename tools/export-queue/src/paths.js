@@ -35,13 +35,23 @@ export function createPathResolver({ allowedRoots, pathMappings, platform = "win
         return s;
     }
 
+    // Length of the part of `probe` that `from` covers, or -1. macOS names a second mount of the
+    // same share "/Volumes/Share-1" (then -2, ...), so a "/Volumes/..." mapping also covers those.
+    function matchLength(probe, from) {
+        const a = fold(probe), b = fold(from);
+        if (a === b || a.startsWith(b + "/")) return from.length;
+        if (/^\/volumes\//i.test(from)) {
+            const suffix = /^-\d{1,3}(?=\/|$)/.exec(a.slice(b.length));
+            if (a.startsWith(b) && suffix) return from.length + suffix[0].length;
+        }
+        return -1;
+    }
+
     function applyMappings(s) {
         const probe = s.replace(/\\/g, "/");
         for (const m of mappings) {
-            const from = m.from.replace(/\\/g, "/");
-            if (fold(probe) === fold(from) || fold(probe).startsWith(fold(from) + "/")) {
-                return m.to + probe.slice(from.length).replace(/\//g, platform === "win32" ? "\\" : "/");
-            }
+            const n = matchLength(probe, m.from.replace(/\\/g, "/"));
+            if (n >= 0) return m.to + probe.slice(n).replace(/\//g, platform === "win32" ? "\\" : "/");
         }
         return s;
     }

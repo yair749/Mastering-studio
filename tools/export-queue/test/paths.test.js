@@ -29,6 +29,13 @@ test("Mac, smb:// and other-drive-letter paths are mapped", () => {
     assert.equal(resolve("/volumes/projects/Client/Poster.indd"), "\\\\NAS\\Projects\\Client\\Poster.indd", "case-insensitive mapping");
 });
 
+test("a second macOS mount of the same share (/Volumes/Share-1) is mapped too", () => {
+    assert.equal(resolve("/Volumes/Projects-1/Client/Poster.indd"), "\\\\NAS\\Projects\\Client\\Poster.indd");
+    assert.equal(resolve("/Volumes/Projects-12/Poster.indd"), "\\\\NAS\\Projects\\Poster.indd");
+    rejects("/Volumes/Projects-Old/Poster.indd", /full path|allowed/);        // a different share, not a re-mount
+    rejects("/Volumes/Projects2/Poster.indd", /full path|allowed/);
+});
+
 test("the longest matching mapping wins, then the root check applies", () => {
     rejects("/Volumes/Projects/Archive/Old.indd", /allowed to use/);   // maps to \\NAS\Archive, not allowed
 });
