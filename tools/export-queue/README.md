@@ -6,6 +6,17 @@ Designers send InDesign exports from their own Mac or PC to the dedicated **expo
 
 ---
 
+## 0. Try it first (any computer, no InDesign needed)
+
+Double-click **`Try it (Windows).cmd`** on a PC, or **`Try it (Mac).command`** on a Mac. Both are in the ExportQueue folder.
+
+- It opens the queue in your browser at `http://localhost:8090/`, with two pretend client drives (Acme Foods, Harbour Hotel) and some sample files.
+- It runs in simulation mode: nothing is really exported (small placeholder files are written), InDesign isn't used and no notifications are sent.
+- It only works on that computer and keeps its own settings, so it's safe to run on the export PC next to the real queue.
+- Close the window to stop it. Delete the `demo` folder to start over.
+- It needs Node.js 22.13 or newer. On Windows it installs Node.js by itself (winget); on a Mac it opens the download page. The first run downloads the one web library, so it needs the internet.
+- On a Mac, the first time: right-click the file → **Open** → **Open**, because macOS blocks files downloaded from the internet when you double-click them.
+
 ## 1. Set up or upgrade the export PC
 
 > **Sandbox first:** put the zip through your security check before you extract it. Check its SHA-256 checksum matches the one you were given: in PowerShell, `Get-FileHash .\ExportQueue.zip`. If Node.js has to be installed, the installer gets it with Windows' own `winget` (the official, signed OpenJS Foundation package). The only library, Express, is installed at the exact versions pinned in `package-lock.json`.
@@ -146,7 +157,7 @@ Start with **Check Export Queue**. It names the problem and the fix.
 
 ## 6. What is tested
 
-- `npm test`: 52 automated tests.
+- `npm test`: 53 automated tests.
   - The server end to end, with real HTTP, a real database and real files, and a stand-in for InDesign: batches, live checks, browse, downloads, preset checks, waiting for InDesign, maintenance stop, config errors, upgrades from 1.x settings.
   - The path rules.
   - `indesign-worker.jsx` against a stand-in for InDesign's scripting model: presets, bleed and slug, open documents, Mac relinking, packages.

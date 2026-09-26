@@ -127,7 +127,8 @@ export function validateConfig(raw, appDir) {
     if (!Array.isArray(n.notifyOn) || !n.notifyOn.every((e) => ["completed", "failed"].includes(e))) {
         fail("ntfy.notifyOn must list \"completed\" and/or \"failed\"");
     }
-    if (!n.topic) {
+    // Not in simulation mode: a trial run must never ping the real notification channel.
+    if (!n.topic && cfg.indesign?.executor !== "simulate") {
         const detected = detectNotifierChannel();
         if (detected) Object.assign(n, detected, { autoDetected: true });
     }

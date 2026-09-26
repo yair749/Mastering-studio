@@ -317,3 +317,19 @@ test("the address shown to designers is on the file servers' network, not a virt
     assert.equal(pickLanUrl({ interfaces, serverIps: ["192.168.1.13"], port: 8080, hostname: "PC" }), "http://192.168.1.42:8080/");
     assert.equal(pickLanUrl({ interfaces: { "vEthernet (WSL)": interfaces["vEthernet (WSL)"] }, serverIps: [], port: 8080, hostname: "PC" }), "http://PC:8080/");
 });
+
+test("the export notifier's channel is reused for real exports, but never in simulation mode", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "export-queue-appdata-"));
+    fs.mkdirSync(path.join(dir, "InDesignExportNotify"));
+    fs.writeFileSync(path.join(dir, "InDesignExportNotify", "settings.txt"), "server=https://ntfy.sh\r\ntopic=real-channel\r\n");
+    const saved = process.env.APPDATA;
+    process.env.APPDATA = dir;
+    try {
+        assert.equal(validateConfig({ allowedRoots: ["P:\\"] }, APP_DIR).ntfy.topic, "real-channel");
+        assert.equal(validateConfig({ allowedRoots: ["P:\\"], indesign: { executor: "simulate" } }, APP_DIR).ntfy.topic, "");
+        assert.equal(validateConfig({ allowedRoots: ["P:\\"], indesign: { executor: "simulate" }, ntfy: { topic: "test-channel" } }, APP_DIR).ntfy.topic, "test-channel");
+    } finally {
+        if (saved === undefined) delete process.env.APPDATA; else process.env.APPDATA = saved;
+        fs.rmSync(dir, { recursive: true, force: true });
+    }
+});
