@@ -194,7 +194,7 @@ if (-not (Test-DependenciesInstalled)) {
     Say "Installing the web server library (Express, exact versions from package-lock.json)..." Cyan
     Push-Location -LiteralPath $AppDir
     try {
-        & npm.cmd ci --omit=dev --no-audit --no-fund
+        & npm.cmd ci --omit=dev --no-audit --no-fund --no-update-notifier
         if ($LASTEXITCODE -ne 0) { throw "npm could not install the web server library (see the messages above). Is this PC online?" }
     } finally { Pop-Location }
 }
