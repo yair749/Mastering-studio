@@ -11,7 +11,7 @@ if ! command -v node >/dev/null 2>&1; then
 fi
 if [ ! -f node_modules/express/package.json ]; then
     echo "Installing the web server library, one time only. This needs the internet..."
-    if ! npm ci --omit=dev --no-audit --no-fund; then
+    if ! npm ci --omit=dev --no-audit --no-fund --no-update-notifier; then
         echo "The web server library could not be installed. Is this Mac online?"
         read -r -p "Press Return to close. "
         exit 1

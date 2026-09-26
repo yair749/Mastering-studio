@@ -21,7 +21,7 @@ exit /b 1
 :haveNode
 if exist "node_modules\express\package.json" goto run
 echo Installing the web server library, one time only. This needs the internet...
-call npm ci --omit=dev --no-audit --no-fund
+call npm ci --omit=dev --no-audit --no-fund --no-update-notifier
 if errorlevel 1 goto npmFailed
 :run
 node scripts\try-demo.js
