@@ -135,6 +135,14 @@ if ($Uninstall) {
     exit 0
 }
 
+if (Test-InsideZip) {
+    Say "Install.cmd was opened from inside the zip, so Windows is running a temporary copy that it deletes later." Yellow
+    Say ""
+    Say "Close this window, then:" Yellow
+    Say "  1. Right-click ExportQueue.zip > Extract All... > choose the Desktop > Extract."
+    Say "  2. Open the extracted ExportQueue folder > windows, and double-click Install.cmd."
+    exit 1
+}
 Say "Setting up the InDesign export queue in $AppDir" Cyan
 Say ""
 
@@ -182,19 +190,6 @@ if ($running) {
 
 # ---------------------------------------------------------------- dependencies (only when they changed)
 
-# Skipped when every library in package-lock.json is already there in the right version, so an
-# upgrade doesn't need the internet (and can't be broken by a failed download).
-function Test-DependenciesInstalled {
-    $lockData = Read-JsonFile (Join-Path $AppDir "package-lock.json")
-    if (-not $lockData -or -not $lockData.packages) { return $false }
-    foreach ($p in $lockData.packages.PSObject.Properties) {
-        if (-not $p.Name -or $p.Value.dev) { continue }
-        $pkg = Join-Path $AppDir (Join-Path $p.Name "package.json")
-        if (-not (Test-Path -LiteralPath $pkg)) { if ($p.Value.optional) { continue }; return $false }
-        try { if ((Read-JsonFile $pkg).version -ne $p.Value.version) { return $false } } catch { return $false }
-    }
-    return $true
-}
 if (-not (Test-DependenciesInstalled)) {
     Say "Installing the web server library (Express, exact versions from package-lock.json)..." Cyan
     Push-Location -LiteralPath $AppDir

@@ -87,6 +87,30 @@ $out = & node --input-type=module -e $validate $cfgFile 2>&1
 Pop-Location
 Check "the server accepts upgraded 1.x settings" ($LASTEXITCODE -eq 0 -and "$out" -match 'One Agency') "$out"
 
+# ---------------------------------------------------------------- libraries, zip
+
+# Windows PowerShell 5.1 stops on a JSON property with an empty name ("" in package-lock.json).
+function Test-NoEmptyNames($o) {
+    if ($o -is [pscustomobject]) { foreach ($p in $o.PSObject.Properties) { if (-not $p.Name -or -not (Test-NoEmptyNames $p.Value)) { return $false } } }
+    elseif ($o -is [array]) { foreach ($x in $o) { if (-not (Test-NoEmptyNames $x)) { return $false } } }
+    return $true
+}
+$lockRaw = [IO.File]::ReadAllText((Join-Path $copy "package-lock.json"))
+Check "package-lock.json really has an empty name (the 5.1 problem)" ($lockRaw -match '""\s*:')
+Check "the settings reader never passes an empty name on" (Test-NoEmptyNames (Read-JsonFile (Join-Path $copy "package-lock.json")))
+$emptyValue = Join-Path $tmp "empty-value.json"
+[IO.File]::WriteAllText($emptyValue, '{"accessKey": "", "a": {"": 1}, "b": "say \"\": hi"}')
+$ev = Read-JsonFile $emptyValue
+Check "empty values and quotes inside text are left alone" ($ev.accessKey -eq "" -and $ev.b -eq 'say "": hi')
+Check "installed libraries are recognised (no download needed)" (Test-DependenciesInstalled $copy)
+$lockCopy = Join-Path $tmp "lockcheck"
+[void](New-Item -ItemType Directory -Path $lockCopy)
+[IO.File]::WriteAllText((Join-Path $lockCopy "package-lock.json"), ($lockRaw -replace '"node_modules/express": \{', '"node_modules/not-installed-lib": { "version": "1.0.0" }, "node_modules/express": {'))
+Copy-Item -LiteralPath (Join-Path $copy "node_modules") -Destination (Join-Path $lockCopy "node_modules")
+Check "a missing library is noticed" (-not (Test-DependenciesInstalled $lockCopy))
+Check "running from inside a zip is noticed" (Test-InsideZip "C:\Users\User\AppData\Local\Temp\25b2_ExportQueue.zip.4c9\ExportQueue")
+Check "a normal Desktop folder is fine" (-not (Test-InsideZip "C:\Users\ONE_Legacy\Desktop\ExportQueue"))
+
 # ---------------------------------------------------------------- address
 
 $cands = @(

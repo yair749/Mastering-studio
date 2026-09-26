@@ -28,10 +28,35 @@ function Read-JsonFile([string]$File) {
     # ReadAllText drops a UTF-8 byte order mark (Notepad adds one).
     $text = [IO.File]::ReadAllText($File)
     if (-not $text.Trim()) { return $null }
+    # Windows PowerShell 5.1 can't read a property with an empty name (package-lock.json has one
+    # for the app itself): give such names a placeholder. A "" value is never followed by ":".
+    $text = [regex]::Replace($text, '(?<!\\)""(\s*:)', '"(empty)"$1')
     return $text | ConvertFrom-Json
 }
 
+# $true when every library in package-lock.json is installed in the right version, so an upgrade
+# doesn't need the internet (and can't be broken by a failed download).
+function Test-DependenciesInstalled([string]$Dir = $AppDir) {
+    $lockData = Read-JsonFile (Join-Path $Dir "package-lock.json")
+    if (-not $lockData -or -not $lockData.packages) { return $false }
+    foreach ($p in $lockData.packages.PSObject.Properties) {
+        if ($p.Name -notlike "node_modules/*" -or $p.Value.dev) { continue }
+        $pkg = Join-Path $Dir (Join-Path $p.Name "package.json")
+        if (-not (Test-Path -LiteralPath $pkg)) { if ($p.Value.optional) { continue }; return $false }
+        try { if ((Read-JsonFile $pkg).version -ne $p.Value.version) { return $false } } catch { return $false }
+    }
+    return $true
+}
+
+# Windows lets you double-click Install.cmd inside a zip: it then runs from a temporary copy
+# that is deleted later. $true when this folder is such a copy.
+function Test-InsideZip([string]$Dir = $AppDir) {
+    return ($Dir -match '\.zip[^\\/]*[\\/]') -or ($env:TEMP -and $Dir.StartsWith($env:TEMP, [StringComparison]::OrdinalIgnoreCase))
+}
+
 function Write-JsonFile([string]$File, $Value) {
+    # Windows PowerShell 5.1 can otherwise write a list as {"value": [...], "Count": n}.
+    Remove-TypeData -TypeName System.Array -ErrorAction SilentlyContinue
     $json = $Value | ConvertTo-Json -Depth 10
     $tmp = "$File.tmp"
     [IO.File]::WriteAllText($tmp, $json, $Utf8NoBom)
