@@ -17,7 +17,7 @@ import vm from "node:vm";
 const MM = 25.4 / 72;
 
 export function loadScript(source, { presets = ["[High Quality Print]", "[Press Quality]"], failExport = () => false } = {}) {
-    const calls = { exports: [], opened: [], closed: [], presetsAdded: [], presetsRemoved: [], idleTasks: [] };
+    const calls = { exports: [], opened: [], closed: [], presetsAdded: [], presetsRemoved: [], idleTasks: [], doScript: [] };
     const unreadable = new Set();          // paths File.open("r") refuses (locked by another program)
 
     class Folder {
@@ -44,6 +44,7 @@ export function loadScript(source, { presets = ["[High Quality Print]", "[Press 
         static selectDialog() { return null; }
     }
     Folder.userData = "/tmp";
+    Folder.temp = "/tmp";
 
     class File {
         constructor(p) { this._p = String(p); this._buf = ""; this._mode = null; this.encoding = "BINARY"; }
@@ -82,6 +83,7 @@ export function loadScript(source, { presets = ["[High Quality Print]", "[Press 
         SaveOptions: { NO: "NO", YES: "YES" },
         LinkStatus: { NORMAL: "NORMAL", LINK_MISSING: "MISSING", LINK_INACCESSIBLE: "INACCESSIBLE" },
         IdleEvent: { ON_IDLE: "onIdle" },
+        ScriptLanguage: { VISUAL_BASIC: "VB", JAVASCRIPT: "JS" },
     };
 
     // PDF presets: a collection like InDesign's. Built-in ones are "locked" (can't be changed).
@@ -122,6 +124,7 @@ export function loadScript(source, { presets = ["[High Quality Print]", "[Press 
             app.documents.push(d);
             return d;
         },
+        doScript(code, language) { calls.doScript.push({ code, language }); },
         get activeDocument() { if (!app.documents.length) throw new Error("No documents are open."); return app.documents[0]; },
         idleTasks: {
             _tasks: [],
@@ -189,7 +192,7 @@ export function loadScript(source, { presets = ["[High Quality Print]", "[Press 
 
     const context = {
         app, File, Folder, Window, ...enums,
-        $: { sleep: () => {}, global: null },
+        $: { sleep: () => {}, global: null, getenv: (k) => (k === "COMPUTERNAME" ? "EXPORT-PC" : "") },
         __SIZE_SORTED_EXPORT_TEST__: true,
     };
     context.$.global = context;

@@ -94,6 +94,7 @@
             rootPath: "",
             outputFolder: "_Exports",
             source: "folder",             // "active" | "folder"
+            watch: "false",                // watching resumes by itself when the dashboard opens
             watchMinutes: "2",
             pdf: "true",
             jpeg: "true",
@@ -146,11 +147,13 @@
         this.file = file;
         this.listeners = [];
         this.counts = { error: 0, warning: 0 };
+        this.errors = [];        // recent error lines, for the phone alert
     }
     Log.prototype.onMessage = function (fn) { this.listeners.push(fn); };
     Log.prototype.write = function (level, text) {
         var line = Util.now() + "  " + (level === "error" ? "ERROR  " : level === "warning" ? "WARNING  " : "") + text;
         if (this.counts.hasOwnProperty(level)) { this.counts[level]++; }
+        if (level === "error") { this.errors.push(text); if (this.errors.length > 50) { this.errors.shift(); } }
         for (var i = 0; i < this.listeners.length; i++) {
             try { this.listeners[i](level, line); } catch (e) { /* a closed window must not stop the export */ }
         }
@@ -167,6 +170,60 @@
     Log.prototype.info = function (t) { this.write("info", t); };
     Log.prototype.warn = function (t) { this.write("warning", t); };
     Log.prototype.error = function (t) { this.write("error", t); };
+
+    // =====================================================================================
+    // PhoneAlert: problems go to the owner's phone through the InDesign export notifier
+    // (tools/indesign-export-notify), if it's installed on this computer: same channel, same
+    // sender with retries. Only problems are sent: the notifier already announces finished exports.
+    // =====================================================================================
+    function PhoneAlert(dir) {
+        this.dir = dir || new Folder(Folder.userData + "/InDesignExportNotify");
+    }
+    PhoneAlert.prototype.settings = function () {
+        var f = new File(this.dir.fsName + "/settings.txt");
+        var sender = new File(this.dir.fsName + "/app/send-notification.ps1");
+        if (!f.exists || !sender.exists) { return null; }
+        f.encoding = "UTF-8";
+        if (!f.open("r")) { return null; }
+        var lines = f.read().split(/\r?\n/), out = {};
+        f.close();
+        for (var i = 0; i < lines.length; i++) {
+            var at = lines[i].indexOf("=");
+            if (at > 0) { out[lines[i].substring(0, at)] = Util.trim(lines[i].substring(at + 1)); }
+        }
+        return out.topic ? out : null;
+    };
+    PhoneAlert.prototype.available = function () { return !!this.settings(); };
+    // Returns true when the message was handed to the sender (which retries for ~15 minutes).
+    PhoneAlert.prototype.send = function (title, body) {
+        var s = this.settings();
+        if (!s) { return false; }
+        var outbox = new Folder(this.dir.fsName + "/outbox");
+        if (!outbox.exists) { outbox.create(); }
+        var msg = new File(outbox.fsName + "/" + new Date().getTime() + "-size-export.msg");
+        msg.encoding = "UTF-8";
+        msg.lineFeed = "Unix";
+        if (!msg.open("w")) { return false; }
+        msg.write("server=" + (s.server || "https://ntfy.sh") + "\ntopic=" + s.topic + "\ntoken=" + (s.token || "") +
+            "\ntitle=" + String(title).replace(/[^\x20-\x7E]/g, "") + "\ntags=warning\npriority=high\n---\n" + body);
+        msg.close();
+        var sender = new File(this.dir.fsName + "/app/send-notification.ps1");
+        var args = '-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "' + sender.fsName + '" -MessageFile "' + msg.fsName + '"';
+        try {
+            app.doScript('CreateObject("WScript.Shell").Run "powershell.exe ' + args.replace(/"/g, '""') + '", 0, False', ScriptLanguage.VISUAL_BASIC);
+        } catch (e) {
+            // No VBScript on this Windows: a launcher file (may flash a window briefly).
+            var cmd = new File(Folder.temp + "/size-export-send.cmd");
+            cmd.open("w");
+            cmd.write('@start "" /min powershell.exe ' + args + "\r\n");
+            cmd.close();
+            cmd.execute();
+        }
+        return true;
+    };
+    PhoneAlert.computer = function () {
+        try { return $.getenv("COMPUTERNAME") || "the exporting machine"; } catch (e) { return "the exporting machine"; }
+    };
 
     // =====================================================================================
     // SizeNamer: turns a page's width and height (in points) into a folder name.
@@ -663,7 +720,9 @@
     // =====================================================================================
     // Dashboard: the floating window.
     // =====================================================================================
-    function Dashboard(settings, log, runner, watcher) {
+    function Dashboard(settings, log, runner, watcher, alert) {
+        this.alert = alert || null;
+        this.rootDown = false;
         this.settings = settings;
         this.log = log;
         this.runner = runner;
@@ -808,7 +867,7 @@
         w.onClose = function () {
             self.readSettings();
             self.settings.save();
-            if (self.watcher.running()) { self.watcher.stop(); self.log.info("Watching stopped (dashboard closed)."); }
+            if (self.watcher.running()) { self.watcher.stop(); self.log.info("Watching paused (dashboard closed). It carries on when the dashboard opens again."); }
             return true;
         };
         this.log.onMessage(function (level, line) { self.addLogLine(level, line); });
@@ -943,7 +1002,7 @@
             if (text) { self.status.text = text; }
             try { self.win.update(); } catch (e) { /* keep going */ }
         };
-        var before = { e: this.log.counts.error, w: this.log.counts.warning };
+        var before = { e: this.log.counts.error, w: this.log.counts.warning, lines: this.log.errors.length };
         var r = null;
         try {
             r = this.runner.run(job);
@@ -953,8 +1012,12 @@
         } finally {
             this.runBtn.enabled = true;
         }
+        var newErrors = this.log.counts.error - before.e;
+        if (newErrors > 0) { this.phone("Size-sorted export needs a look", newErrors + " problem(s) in the last export:\n" +
+            this.log.errors.slice(Math.max(0, this.log.errors.length - Math.min(newErrors, 8))).join("\n") +
+            (newErrors > 8 ? "\n..." : "") + "\nDetails: the dashboard's log on " + PhoneAlert.computer() + "."); }
         if (r) {
-            var errors = this.log.counts.error - before.e, warnings = this.log.counts.warning - before.w;
+            var errors = newErrors, warnings = this.log.counts.warning - before.w;
             this.log.info("Finished: " + r.exported + " file(s) exported" + (r.failed ? ", " + r.failed + " failed" : "") +
                 (r.skipped ? ", " + r.skipped + " document(s) skipped (not ready yet)" : "") + ".");
             this.say(errors ? "Finished with " + errors + " problem(s): see the red X lines below."
@@ -962,8 +1025,27 @@
         }
     };
 
+    Dashboard.prototype.phone = function (title, body) {
+        if (!this.alert) { return; }
+        try {
+            if (this.alert.send(title, body)) { this.log.info("Phone alert sent: " + title); }
+        } catch (e) { this.log.warn("Couldn't send the phone alert: " + Util.errorText(e)); }
+    };
+
+    // At start-up: say whether problems reach the phone, and carry on watching if it was on.
+    Dashboard.prototype.start = function () {
+        if (this.alert && this.alert.available()) { this.log.info("Problems are also sent to your phone (export notifier channel)."); }
+        else { this.log.info("Phone alerts are off: the InDesign export notifier isn't installed on this computer."); }
+        if (this.settings.bool("watch")) {
+            this.watchBox.value = true;
+            this.toggleWatch();
+        }
+    };
+
     Dashboard.prototype.toggleWatch = function () {
         var self = this;
+        this.settings.set("watch", this.watchBox.value);
+        this.settings.save();
         if (!this.watchBox.value) {
             this.watcher.stop();
             this.log.info("Watching stopped.");
@@ -981,7 +1063,16 @@
     Dashboard.prototype.watchTick = function () {
         if (this.runner.busy) { return; }
         var root = new Folder(this.settings.get("rootPath"));
-        if (!root.exists) { this.log.error("The root folder can't be reached: " + root.fsName + " (is Google Drive running?)"); return; }
+        if (!root.exists) {
+            this.log.error("The root folder can't be reached: " + root.fsName + " (is Google Drive running?)");
+            if (!this.rootDown) {          // once, not every few minutes
+                this.rootDown = true;
+                this.phone("Size-sorted export can't reach its folder", "Watching " + root.fsName + " on " + PhoneAlert.computer() +
+                    ", but the folder can't be opened. Is Google Drive running and signed in? Exports continue by themselves once it's back.");
+            }
+            return;
+        }
+        if (this.rootDown) { this.rootDown = false; this.log.info("The root folder can be reached again."); }
         var due = this.watcher.due(findDocuments(root, this.outputRoot(), this.runner.guard));
         if (!due.length) { this.say("Watching. Last check " + Util.now() + ": nothing new."); return; }
         var docs = [];
@@ -1011,6 +1102,7 @@
     NS.BatchRunner = BatchRunner;
     NS.FolderWatcher = FolderWatcher;
     NS.findDocuments = findDocuments;
+    NS.PhoneAlert = PhoneAlert;
     NS.Dashboard = Dashboard;
 
     if (global.__SIZE_SORTED_EXPORT_TEST__) { return; }       // tests load the classes only
@@ -1026,9 +1118,10 @@
     var runner = new BatchRunner(NS.log);
     var watcher = new FolderWatcher(new File(dataDir + "/exported-files.txt"), NS.log);
     watcher.stop();      // a watch task left from an earlier dashboard in this session
-    NS.dashboard = new Dashboard(settings, NS.log, runner, watcher);
+    NS.dashboard = new Dashboard(settings, NS.log, runner, watcher, new PhoneAlert());
     var win = NS.dashboard.build();
     win.onShow = function () { NS.log.info(APP_NAME + " " + VERSION + " ready. Log file: " + NS.log.file.fsName); };
     win.show();
+    NS.dashboard.start();
 
 })($.global);

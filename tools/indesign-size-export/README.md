@@ -49,6 +49,9 @@ Click **Execute Batch Export** to run it now.
 - **Missing links are reported.** They usually mean Google Drive hasn't finished syncing the Links folder.
 - **A document open elsewhere is noted.** If a designer has it open on another computer, the log says the last synced version was exported.
 
+- **Problems reach your phone.** If the **InDesign export notifier** is installed on the exporting machine, failed exports and "the Google Drive folder can't be reached" are sent to the same phone channel as your export notifications. A dead folder alerts once, not every few minutes. The notifier already announces finished exports, so only problems are sent. The dashboard says at start-up whether phone alerts are on.
+- **Watch mode comes back by itself.** It remembers that it was on, and carries on when the dashboard opens again. Put the script in **Startup Scripts** so that happens whenever InDesign starts.
+
 ## Tips for Google Drive
 
 - On the exporting machine, set Google Drive for desktop to **Mirror files**, not *Stream files*: Drive icon → ⚙ Settings → Google Drive → **Mirror files**. Streamed files are only downloaded when opened, which makes every export slow and can time out.
@@ -65,7 +68,7 @@ The code is split into small parts. Each is described at the top of `SizeSortedE
 
 ## Tests
 
-`node --test tools/indesign-size-export/tests/test-size-export.js` runs the real script against a stand-in for InDesign and ScriptUI (`tests/indesign-stub.js`). That stand-in removes everything InDesign's older JavaScript doesn't have, so newer JavaScript used by mistake fails the test. 18 tests cover:
+`node --test tools/indesign-size-export/tests/test-size-export.js` runs the real script against a stand-in for InDesign and ScriptUI (`tests/indesign-stub.js`). That stand-in removes everything InDesign's older JavaScript doesn't have, so newer JavaScript used by mistake fails the test. 22 tests cover:
 - size names and file names;
 - mixed-size documents in all three formats, with the settings checked at each single export;
 - failures that stop only one page;
@@ -74,7 +77,9 @@ The code is split into small parts. Each is described at the top of `SizeSortedE
 - name clashes, sections, and already-open documents;
 - the watch logic;
 - saved settings;
-- the dashboard's buttons.
+- the dashboard's buttons;
+- phone alerts (and one real alert sent through the notifier's sender to a real ntfy server);
+- Watch resuming after a restart.
 
 **Not tested:**
 - Real InDesign wasn't available. That includes the look of the window, and InDesign's exact behaviour with page ranges and preset copying.

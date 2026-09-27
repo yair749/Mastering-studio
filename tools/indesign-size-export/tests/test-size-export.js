@@ -318,3 +318,94 @@ test("the dashboard's watch checkbox exports new files after they've settled", (
     dash.watchBox.onClick();
     assert.equal(t.app.idleTasks._tasks.length, 0);
 });
+
+// The export notifier's folder, as Install.cmd leaves it (settings + sender).
+function fakeNotifier(t) {
+    const dir = path.join(tmpdir(), "InDesignExportNotify");
+    fs.mkdirSync(path.join(dir, "app"), { recursive: true });
+    fs.writeFileSync(path.join(dir, "settings.txt"), "server=https://ntfy.sh\r\ntopic=indesign-exports-abc123\r\n");
+    fs.writeFileSync(path.join(dir, "app", "send-notification.ps1"), "# sender");
+    return { dir, alert: new t.ns.PhoneAlert(new t.Folder(dir)), outbox: () => (fs.existsSync(path.join(dir, "outbox")) ? fs.readdirSync(path.join(dir, "outbox")).map((n) => fs.readFileSync(path.join(dir, "outbox", n), "utf8")) : []) };
+}
+function dashboardFor(t, alert, over = {}) {
+    const settings = new t.ns.Settings(null);
+    settings.set("rootPath", t.root);
+    settings.set("pdf", false);
+    settings.set("jpeg", true);
+    for (const [k, v] of Object.entries(over)) settings.set(k, v);
+    const runner = new t.ns.BatchRunner(t.log, { guard: new t.ns.FileGuard({ settleMs: 0 }) });
+    const dash = new t.ns.Dashboard(settings, t.log, runner, new t.ns.FolderWatcher(null, t.log), alert);
+    dash.build();
+    return dash;
+}
+
+test("problems go to the phone through the export notifier's channel; a clean run sends nothing", () => {
+    const t = setup({ docs: { "Poster.indd": [SQUARE, A4] }, failExport: (c) => c.prefs.pageString === "2" });
+    const n = fakeNotifier(t);
+    const dash = dashboardFor(t, n.alert);
+    dash.start();
+    assert.ok(dash.logList.items.some((i) => /Problems are also sent to your phone/.test(i.text)));
+    dash.runBtn.onClick();
+    const msgs = n.outbox();
+    assert.equal(msgs.length, 1);
+    assert.match(msgs[0], /^server=https:\/\/ntfy\.sh\ntopic=indesign-exports-abc123\ntoken=\ntitle=Size-sorted export needs a look\ntags=warning\npriority=high\n---\n/);
+    assert.match(msgs[0], /1 problem\(s\) in the last export:\nPoster\.indd page 2 \(A4\) JPEG: The file is in use/);
+    assert.match(msgs[0], /on EXPORT-PC/);
+    assert.equal(t.calls.doScript.length, 1);
+    assert.equal(t.calls.doScript[0].language, "VB");
+    assert.match(t.calls.doScript[0].code, /send-notification\.ps1"" -MessageFile ""/, "started hidden, like the notifier does");
+    // A clean run: no message.
+    const t2 = setup({ docs: { "Poster.indd": [SQUARE] } });
+    const n2 = fakeNotifier(t2);
+    dashboardFor(t2, n2.alert).runBtn.onClick();
+    assert.equal(n2.outbox().length, 0);
+});
+
+test("without the export notifier, the dashboard says phone alerts are off (and still works)", () => {
+    const t = setup({ docs: { "Poster.indd": [SQUARE] }, failExport: () => true });
+    const dash = dashboardFor(t, new t.ns.PhoneAlert(new t.Folder(path.join(t.root, "nothing-here"))));
+    dash.start();
+    assert.ok(dash.logList.items.some((i) => /Phone alerts are off/.test(i.text)));
+    dash.runBtn.onClick();
+    assert.match(dash.status.text, /Finished with 1 problem/);
+});
+
+test("watching: an unreachable Google Drive folder alerts once, not every few minutes", () => {
+    const t = setup({ docs: { "Poster.indd": [SQUARE] } });
+    const n = fakeNotifier(t);
+    const dash = dashboardFor(t, n.alert);
+    dash.watchBox.value = true;
+    dash.watchBox.onClick();
+    const real = t.root, gone = t.root + "-offline";
+    fs.renameSync(real, gone);
+    const task = t.app.idleTasks._tasks[0];
+    task.listeners[0]();
+    task.listeners[0]();
+    fs.renameSync(gone, real);
+    task.listeners[0]();
+    assert.equal(n.outbox().length, 1);
+    assert.match(n.outbox()[0], /can't reach its folder/);
+    assert.ok(dash.logList.items.some((i) => /can be reached again/.test(i.text)));
+});
+
+test("watching carries on by itself after InDesign or the dashboard restarts", () => {
+    const t = setup({ docs: { "Poster.indd": [SQUARE] } });
+    const file = new t.File(path.join(t.root, "settings.txt"));
+    const first = new t.ns.Settings(file);
+    first.set("rootPath", t.root);
+    first.save();
+    const runner = new t.ns.BatchRunner(t.log, { guard: new t.ns.FileGuard({ settleMs: 0 }) });
+    const d1 = new t.ns.Dashboard(first, t.log, runner, new t.ns.FolderWatcher(null, t.log));
+    const w1 = d1.build();
+    d1.watchBox.value = true;
+    d1.watchBox.onClick();
+    w1.close();                                     // e.g. InDesign quits
+    assert.equal(t.app.idleTasks._tasks.length, 0);
+    const again = new t.ns.Settings(file);
+    again.load();
+    const d2 = new t.ns.Dashboard(again, t.log, runner, new t.ns.FolderWatcher(null, t.log));
+    d2.build();
+    d2.start();
+    assert.equal(d2.watchBox.value, true);
+    assert.equal(t.app.idleTasks._tasks.length, 1, "watching again");
+});
