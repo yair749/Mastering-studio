@@ -111,6 +111,20 @@ Check "a missing library is noticed" (-not (Test-DependenciesInstalled $lockCopy
 Check "running from inside a zip is noticed" (Test-InsideZip "C:\Users\User\AppData\Local\Temp\25b2_ExportQueue.zip.4c9\ExportQueue")
 Check "a normal Desktop folder is fine" (-not (Test-InsideZip "C:\Users\ONE_Legacy\Desktop\ExportQueue"))
 
+# ---------------------------------------------------------------- old copies are recognised
+
+if ($isWin) {
+    $cl = "C:\Windows\system32\cmd.exe /c """"$copy\windows\start.cmd"" """
+    Check "a 1.x start.cmd window of this copy is recognised" ((Get-QueueFolderOfCommandLine $cl) -eq $copy)
+} else {
+    # Windows paths only; check the pattern with a stand-in drive path.
+    $m = [regex]::Match('C:\WINDOWS\system32\cmd.exe /c ""C:\Users\ONE_Legacy\Desktop\ExportQueue\windows\start.cmd" "', '([A-Za-z]:\\[^"<>|]*?)\\windows\\(launcher\.ps1|start\.cmd)', "IgnoreCase")
+    Check "a 1.x start.cmd in another folder is found in its command line" ($m.Groups[1].Value -eq "C:\Users\ONE_Legacy\Desktop\ExportQueue")
+    $m2 = [regex]::Match('powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "C:\Users\ONE_Legacy\Desktop\ExportQueue\ExportQueue\windows\launcher.ps1"', '([A-Za-z]:\\[^"<>|]*?)\\windows\\(launcher\.ps1|start\.cmd)', "IgnoreCase")
+    Check "a 2.x launcher in a nested folder is found too" ($m2.Groups[1].Value -eq "C:\Users\ONE_Legacy\Desktop\ExportQueue\ExportQueue")
+}
+Check "unrelated command lines are ignored" ($null -eq (Get-QueueFolderOfCommandLine 'C:\Windows\system32\cmd.exe /c "C:\Tools\build.cmd"'))
+
 # ---------------------------------------------------------------- InDesign scripts
 
 $fakeAppData = Join-Path $tmp "AppData"

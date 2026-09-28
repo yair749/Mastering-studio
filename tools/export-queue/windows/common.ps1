@@ -266,18 +266,30 @@ function Get-ListenerProcessId {
     return $null
 }
 
-# Launchers of this copy of the queue: launcher.ps1 (2.x) and start.cmd windows (1.x).
+# The export queue folder a launcher command line belongs to, or $null. Recognises launcher.ps1
+# (2.x) and windows\start.cmd (1.x) of ANY copy of the export queue, e.g. an older copy in another
+# folder, so an upgrade never leaves an old copy running that would take the port back.
+function Get-QueueFolderOfCommandLine([string]$CommandLine) {
+    $m = [regex]::Match($CommandLine, '([A-Za-z]:\\[^"<>|]*?)\\windows\\(launcher\.ps1|start\.cmd)', "IgnoreCase")
+    if (-not $m.Success) { return $null }
+    $dir = $m.Groups[1].Value
+    try {
+        $pkg = Join-Path $dir "package.json"
+        if ((Test-Path -LiteralPath (Join-Path $dir "src\server.js")) -and (Test-Path -LiteralPath $pkg) -and
+            ([IO.File]::ReadAllText($pkg) -match '"name":\s*"indesign-export-queue"')) { return $dir }
+    } catch {}
+    return $null
+}
+
 function Get-LauncherProcesses {
-    $mine = @()
+    $found = @()
     try {
         foreach ($p in @(Get-CimInstance Win32_Process -Filter "Name = 'powershell.exe' OR Name = 'cmd.exe'" -ErrorAction Stop)) {
-            $cl = [string]$p.CommandLine
             if ($p.ProcessId -eq $PID) { continue }
-            if ($cl.IndexOf($AppDir, [StringComparison]::OrdinalIgnoreCase) -lt 0) { continue }
-            if ($cl -match 'launcher\.ps1|\\windows\\start\.cmd') { $mine += $p }
+            if (Get-QueueFolderOfCommandLine ([string]$p.CommandLine)) { $found += $p }
         }
     } catch {}
-    return $mine
+    return $found
 }
 
 function Wait-Until([scriptblock]$Condition, [int]$Seconds) {
