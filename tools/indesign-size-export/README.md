@@ -84,7 +84,7 @@ The code is split into small parts. Each is described at the top of `SizeSortedE
 **Tested in real InDesign 2026 (28 September 2026, export PC):**
 - The dashboard opens and works.
 - A 9-page document (1361 x 765 pages) gave 27 files (PDF, JPEG, PNG) in a `1361x765` folder, with the right names and page order.
-- JPEG at 72 ppi is exactly 1361 x 765 pixels.
+- JPEG at 72 ppi is exactly 1361 x 765 pixels, and each PDF is a single page (the per-page range and the preset copy work).
 - The original document was left unchanged.
 
 **Not tested yet:**
