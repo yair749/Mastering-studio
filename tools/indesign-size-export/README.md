@@ -81,11 +81,16 @@ The code is split into small parts. Each is described at the top of `SizeSortedE
 - phone alerts (and one real alert sent through the notifier's sender to a real ntfy server);
 - Watch resuming after a restart.
 
-**Not tested:**
-- Real InDesign wasn't available. That includes the look of the window, and InDesign's exact behaviour with page ranges and preset copying.
-- Clicks during a long batch: InDesign scripts can't react to them until the batch ends. The window still shows progress.
+**Tested in real InDesign 2026 (28 September 2026, export PC):**
+- The dashboard opens and works.
+- A 9-page document (1361 x 765 pages) gave 27 files (PDF, JPEG, PNG) in a `1361x765` folder, with the right names and page order.
+- JPEG at 72 ppi is exactly 1361 x 765 pixels.
+- The original document was left unchanged.
 
-Try it first on a copy of one mixed-size document, and check each format once.
+**Not tested yet:**
+- A document with pages of different sizes in real InDesign (the sorting itself is covered by the automated tests).
+- Watch mode and phone alerts in real InDesign.
+- Clicks during a long batch: InDesign scripts can't react to them until the batch ends. The window still shows progress.
 
 ## Alongside the export queue
 
