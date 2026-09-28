@@ -181,8 +181,17 @@
     }
     PhoneAlert.prototype.settings = function () {
         var f = new File(this.dir.fsName + "/settings.txt");
+        var legacy = new File(this.dir.fsName + "/channel.txt");     // notifier installs from before settings.txt
         var sender = new File(this.dir.fsName + "/app/send-notification.ps1");
-        if (!f.exists || !sender.exists) { return null; }
+        if (!sender.exists) { return null; }
+        if (!f.exists) {
+            if (!legacy.exists) { return null; }
+            legacy.encoding = "UTF-8";
+            if (!legacy.open("r")) { return null; }
+            var topic = Util.trim(legacy.read());
+            legacy.close();
+            return topic ? { server: "https://ntfy.sh", topic: topic } : null;
+        }
         f.encoding = "UTF-8";
         if (!f.open("r")) { return null; }
         var lines = f.read().split(/\r?\n/), out = {};

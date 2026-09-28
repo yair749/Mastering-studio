@@ -409,3 +409,16 @@ test("watching carries on by itself after InDesign or the dashboard restarts", (
     assert.equal(d2.watchBox.value, true);
     assert.equal(t.app.idleTasks._tasks.length, 1, "watching again");
 });
+
+test("an older notifier install (channel.txt instead of settings.txt) is recognised too", () => {
+    const t = setup();
+    const dir = path.join(tmpdir(), "InDesignExportNotify");
+    fs.mkdirSync(path.join(dir, "app"), { recursive: true });
+    fs.writeFileSync(path.join(dir, "app", "send-notification.ps1"), "# sender");
+    fs.writeFileSync(path.join(dir, "channel.txt"), "indesign-exports-old123\r\n");
+    const alert = new t.ns.PhoneAlert(new t.Folder(dir));
+    assert.equal(alert.available(), true);
+    alert.send("Size-sorted export needs a look", "test");
+    const msg = fs.readFileSync(path.join(dir, "outbox", fs.readdirSync(path.join(dir, "outbox"))[0]), "utf8");
+    assert.match(msg, /^server=https:\/\/ntfy\.sh\ntopic=indesign-exports-old123\n/);
+});
