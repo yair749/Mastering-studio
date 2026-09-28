@@ -6,7 +6,7 @@ These are the owner's standing rules for this repository. Follow them in every s
 - **Don't build what already exists.** Look to the community first.
 - **Free over paid.**
 - **Only use projects with 1000+ GitHub stars.** Check the star count before recommending anything.
-- **Sandbox first.** Anything we download is put through a sandbox security check before it runs on a real machine. Say so whenever a new download is involved, and give the checksum or verification step if one exists.
+- **Only build safe, usable software.** Everything we ship must be safe to run on the office machines as it is, with no separate security check needed. Only use official, signed sources (for example winget packages), pin exact versions, never download or run anything hidden, keep services limited to the office network, and keep setup simple enough that the owner and staff can use it straight away.
 
 ## Reliability rules (the export notifier and anything else we ship here)
 The goal is a fail-safe system the owner can just trust. Less complex usually means better.

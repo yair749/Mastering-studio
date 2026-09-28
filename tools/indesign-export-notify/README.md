@@ -62,7 +62,7 @@ Where things live on the export PC: `%APPDATA%\InDesignExportNotify\` holds the 
 - Messages contain only the file names, the InDesign document name and the PC name. No files or contents are sent. ntfy.sh deletes messages after 12 hours.
 - To keep names out of notifications, run `Install.cmd -HideFileNames` from a command prompt in this folder. Messages then just say "Done (2)". `-ShowFileNames` turns names back on.
 - A fully private self-hosted option is in [`optional-self-hosting/`](optional-self-hosting/SETUP.md), but it's much more setup.
-- Per our policy, run the files through the sandbox security check first. They're short, readable scripts.
+- The files are short, readable scripts; nothing else is downloaded.
 
 ## If something doesn't work
 

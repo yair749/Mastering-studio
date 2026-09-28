@@ -21,7 +21,7 @@ It can export the active document, or every InDesign file in a folder such as a 
 
 To have the dashboard open every time InDesign starts, put the file in InDesign's **Startup Scripts** folder instead. That's the `Startup Scripts` folder next to `Scripts Panel`, one level up from the folder in step 2.
 
-> **Sandbox first:** it's a plain text script with nothing to download. Read it or put it through your checks before copying it to the exporting machine.
+> It's a single plain-text script: nothing is downloaded or installed.
 
 ## Using the dashboard
 

@@ -19,7 +19,7 @@ Double-click **`Try it (Windows).cmd`** on a PC, or **`Try it (Mac).command`** o
 
 ## 1. Set up or upgrade the export PC
 
-> **Sandbox first:** put the zip through your security check before you extract it. Check its SHA-256 checksum matches the one you were given: in PowerShell, `Get-FileHash .\ExportQueue.zip`. If Node.js has to be installed, the installer gets it with Windows' own `winget` (the official, signed OpenJS Foundation package). The only library, Express, is installed at the exact versions pinned in `package-lock.json`.
+> **What it installs:** if Node.js is missing, the installer gets it with Windows' own `winget` (the official, signed OpenJS Foundation package). The only library, Express, is installed at the exact versions pinned in `package-lock.json`. Nothing else is downloaded.
 
 1. **Log in as the Windows user who runs InDesign** (on the export PC that's `ONE_Legacy`).
 2. **Extract the zip onto the Desktop**, so the files end up in `Desktop\ExportQueue`. If you're upgrading, extract over the old folder and choose **Replace the files**. Your settings and job history are kept.

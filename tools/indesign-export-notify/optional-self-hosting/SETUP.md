@@ -19,9 +19,9 @@ Plan about 30–45 minutes. Run all commands in **PowerShell as Administrator** 
 
 ---
 
-## 0. Sandbox check first (our policy)
+## 0. Download the two tools (official releases only)
 
-Download both tools and put them through the sandbox security checks before they touch the export PC:
+Download both tools from their official release pages and check them before they touch the export PC:
 
 - ntfy: `ntfy_2.28.0_windows_amd64.zip` and `checksums.txt` from
   https://github.com/binwiederhier/ntfy/releases/tag/v2.28.0
@@ -32,7 +32,7 @@ Download both tools and put them through the sandbox security checks before they
   ```
   The two values must be identical.
 - mkcert: `winget install FiloSottile.mkcert` (winget checks the file hash), or `mkcert-v1.4.4-windows-amd64.exe` from
-  https://github.com/FiloSottile/mkcert/releases/tag/v1.4.4. mkcert doesn't publish checksums, so the sandbox scan matters more here.
+  https://github.com/FiloSottile/mkcert/releases/tag/v1.4.4. mkcert doesn't publish checksums, so prefer the winget install.
 
 ## 1. Give the export PC a fixed name and address
 
@@ -158,7 +158,7 @@ The staff link is `https://export-pc/exports-channel-private`.
 ## Maintenance
 
 - **Backup:** `C:\ProgramData\ntfy` (logins, message history, browser subscriptions, certificates).
-- **Update ntfy:** check the releases page occasionally. To update: sandbox the new zip, `sc.exe stop ntfy`, replace `C:\ntfy\ntfy.exe`, `sc.exe start ntfy`.
+- **Update ntfy:** check the releases page occasionally. To update: download the new zip from the official releases page and check its checksum, `sc.exe stop ntfy`, replace `C:\ntfy\ntfy.exe`, `sc.exe start ntfy`.
 - **Internet access:** background notifications are delivered through the browser's own push service (Google for Chrome, Microsoft for Edge), so the export PC needs normal outbound internet access. That traffic is end-to-end encrypted under the Web Push standard; the push service can't read it.
 - **Staff who don't open ntfy for ~2 months** get a "Notifications will be paused" pop-up; opening https://export-pc once renews it.
 - **Logs:** if the service misbehaves, stop it and run `ntfy serve` in a window to see errors.
