@@ -14,6 +14,10 @@ It can export the active document, or every InDesign file in a folder such as a 
 
 ## Install (on the exporting machine)
 
+**Easiest:** it comes with the Export Queue. Double-clicking the Export Queue's `windows\Install.cmd` puts the latest version into InDesign's Scripts panel, and does the same again at every update. If the dashboard is already open, double-click the script in the Scripts panel once more to switch to the new version; there's no need to restart InDesign.
+
+**By hand:**
+
 1. In InDesign: **Window → Utilities → Scripts**.
 2. In the Scripts panel, right-click **User** → **Reveal in Explorer** (Mac: **Reveal in Finder**).
 3. Copy `SizeSortedExport.jsx` into that folder.

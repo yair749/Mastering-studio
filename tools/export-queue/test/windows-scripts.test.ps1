@@ -20,7 +20,7 @@ function Check([string]$Name, [bool]$Condition, [string]$Detail = "") {
 $tmp = Join-Path ([IO.Path]::GetTempPath()) ("eq-win-" + [guid]::NewGuid().ToString("N").Substring(0, 8))
 $copy = Join-Path $tmp "ExportQueue"
 [void](New-Item -ItemType Directory -Path $copy)
-foreach ($item in "src", "public", "scripts", "windows", "package.json", "package-lock.json", "config.example.json") {
+foreach ($item in "src", "public", "scripts", "windows", "indesign-scripts", "package.json", "package-lock.json", "config.example.json") {
     Copy-Item -LiteralPath (Join-Path $app $item) -Destination $copy -Recurse
 }
 $isWin = $env:OS -eq "Windows_NT"
@@ -110,6 +110,21 @@ Copy-Item -LiteralPath (Join-Path $copy "node_modules") -Destination (Join-Path 
 Check "a missing library is noticed" (-not (Test-DependenciesInstalled $lockCopy))
 Check "running from inside a zip is noticed" (Test-InsideZip "C:\Users\User\AppData\Local\Temp\25b2_ExportQueue.zip.4c9\ExportQueue")
 Check "a normal Desktop folder is fine" (-not (Test-InsideZip "C:\Users\ONE_Legacy\Desktop\ExportQueue"))
+
+# ---------------------------------------------------------------- InDesign scripts
+
+$fakeAppData = Join-Path $tmp "AppData"
+$v21 = Join-Path $fakeAppData "Adobe/InDesign/Version 21.0/en_US/Scripts/Scripts Panel"
+[void](New-Item -ItemType Directory -Path $v21 -Force)
+Set-Content -LiteralPath (Join-Path $v21 "SizeSortedExport.jsx") -Value "old version"
+[void](New-Item -ItemType Directory -Path (Join-Path $fakeAppData "Adobe/InDesign/Version 20.0/en_GB/Scripts") -Force)
+[void](New-Item -ItemType Directory -Path (Join-Path $fakeAppData "Adobe/InDesign/Version 19.0/en_US") -Force)
+$placed = @(Install-InDesignScripts $fakeAppData)
+$source = [IO.File]::ReadAllText((Join-Path $copy "indesign-scripts/SizeSortedExport.jsx"))
+Check "the InDesign script goes into each InDesign version's Scripts panel" ($placed.Count -eq 2) (@($placed) -join "; ")
+Check "an older copy is replaced by the new one" ([IO.File]::ReadAllText((Join-Path $v21 "SizeSortedExport.jsx")) -eq $source)
+Check "a missing Scripts Panel folder is created" (Test-Path -LiteralPath (Join-Path $fakeAppData "Adobe/InDesign/Version 20.0/en_GB/Scripts/Scripts Panel/SizeSortedExport.jsx"))
+Check "no InDesign settings for this user: nothing written, no error" (@(Install-InDesignScripts (Join-Path $tmp "nobody")).Count -eq 0)
 
 # ---------------------------------------------------------------- address
 

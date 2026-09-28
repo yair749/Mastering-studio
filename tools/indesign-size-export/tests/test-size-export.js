@@ -422,3 +422,26 @@ test("an older notifier install (channel.txt instead of settings.txt) is recogni
     const msg = fs.readFileSync(path.join(dir, "outbox", fs.readdirSync(path.join(dir, "outbox"))[0]), "utf8");
     assert.match(msg, /^server=https:\/\/ntfy\.sh\ntopic=indesign-exports-old123\n/);
 });
+
+test("running the script again shows the same dashboard; an updated script replaces it and keeps the settings", () => {
+    const t = setup({ docs: { "Poster.indd": [SQUARE] } });
+    const data = new t.Folder(path.join(t.root, "data"));
+    const noAlert = new t.ns.PhoneAlert(new t.Folder(path.join(t.root, "no-notifier")));
+    const first = t.ns.launch(data, noAlert);
+    assert.equal(first.win.shown, true);
+    first.settings.set("rootPath", t.root);
+    first.watchBox.value = true;
+    first.watchBox.onClick();                                   // watching, saved in settings
+    // Double-click again (same version): the same window comes to the front.
+    t.run(JSX);
+    assert.equal(t.context.SizeSortedExport.launch(data, noAlert), first);
+    // A newer file: the old window closes (saving its settings) and the new one opens and carries on watching.
+    t.run(JSX.replace('var VERSION = "1.1.0";', 'var VERSION = "1.2.0";'));
+    const second = t.context.SizeSortedExport.launch(data, noAlert);
+    assert.notEqual(second, first);
+    assert.equal(second.version, "1.2.0");
+    assert.equal(first.win.shown, false, "old window closed");
+    assert.equal(second.settings.get("rootPath"), t.root);
+    assert.equal(second.watchBox.value, true);
+    assert.equal(t.app.idleTasks._tasks.length, 1, "one watch task, not two");
+});

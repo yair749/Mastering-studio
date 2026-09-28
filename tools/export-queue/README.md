@@ -33,7 +33,8 @@ Double-click **`Try it (Windows).cmd`** on a PC, or **`Try it (Mac).command`** o
 The installer also does the following by itself:
 - finds the client drives mapped on this PC (M:, N:, X: …) and the names Macs use for them (`/Volumes/MG_Mega` …);
 - makes the queue start by itself at every login, in the background, with no window that could be closed by mistake;
-- creates a desktop shortcut **Export Queue** and a Start menu folder **InDesign Export Queue**.
+- creates a desktop shortcut **Export Queue** and a Start menu folder **InDesign Export Queue**;
+- puts the latest **Size-Sorted Export** InDesign script into InDesign (**Window → Utilities → Scripts → User**), replacing an older copy.
 
 Running `Install.cmd` again is always safe. Do it after you map a new client drive: the drive is added and nothing else changes.
 

@@ -271,6 +271,21 @@ New-Shortcut (Join-Path $paths.Menu "Export Queue log folder.lnk") (Join-Path $e
 New-UrlShortcut $paths.Desktop $localUrl
 Ok "Starts by itself at login (in the background); Start menu folder '$MenuName'; desktop shortcut 'Export Queue'"
 
+# ---------------------------------------------------------------- InDesign script(s)
+
+if (Test-Path -LiteralPath (Join-Path $AppDir "indesign-scripts")) {
+    try {
+        $placed = @(Install-InDesignScripts)
+        if ($placed.Count) {
+            Ok "InDesign script 'SizeSortedExport' is up to date (InDesign: Window > Utilities > Scripts > User)"
+        } else {
+            Warn "InDesign's scripts folder wasn't found for this Windows user. Open InDesign once, close it, then double-click Install.cmd again."
+        }
+    } catch {
+        Warn "Couldn't put the InDesign script in place: $($_.Exception.Message)"
+    }
+}
+
 # ---------------------------------------------------------------- start
 
 Say ""

@@ -397,6 +397,34 @@ function Test-SleepNever {
     return (($s -eq 0 -or $s -eq $null) -and ($h -eq 0 -or $h -eq $null))
 }
 
+# ---------------------------------------------------------------- InDesign scripts
+
+# Puts the InDesign scripts that come with the queue (indesign-scripts\*.jsx, e.g. the Size-Sorted
+# Export dashboard) into the Scripts panel of every InDesign version this Windows user has:
+# %APPDATA%\Adobe\InDesign\Version 21.0\en_US\Scripts\Scripts Panel. Returns the files written.
+function Install-InDesignScripts([string]$AppData = $env:APPDATA, [string]$SourceDir = (Join-Path $AppDir "indesign-scripts")) {
+    $written = @()
+    if (-not $AppData -or -not (Test-Path -LiteralPath $SourceDir)) { return $written }
+    $scripts = @(Get-ChildItem -LiteralPath $SourceDir -Filter "*.jsx" -File)
+    $root = Join-Path $AppData "Adobe\InDesign"
+    if (-not $scripts.Count -or -not (Test-Path -LiteralPath $root)) { return $written }
+    foreach ($version in @(Get-ChildItem -LiteralPath $root -Directory -Filter "Version *")) {
+        foreach ($locale in @(Get-ChildItem -LiteralPath $version.FullName -Directory)) {
+            $scriptsDir = Join-Path $locale.FullName "Scripts"
+            if (-not (Test-Path -LiteralPath $scriptsDir)) { continue }      # not a language folder
+            $panel = Join-Path $scriptsDir "Scripts Panel"
+            if (-not (Test-Path -LiteralPath $panel)) { [void](New-Item -ItemType Directory -Path $panel) }
+            foreach ($s in $scripts) {
+                $dest = Join-Path $panel $s.Name
+                Copy-Item -LiteralPath $s.FullName -Destination $dest -Force
+                try { Unblock-File -LiteralPath $dest -ErrorAction Stop } catch {}
+                $written += $dest
+            }
+        }
+    }
+    return $written
+}
+
 # ---------------------------------------------------------------- shortcuts
 
 function New-Shortcut([string]$Path, [string]$Target, [string]$Arguments, [string]$Description, [int]$WindowStyle = 1, [string]$Icon) {

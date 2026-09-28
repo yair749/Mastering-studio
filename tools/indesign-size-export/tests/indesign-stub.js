@@ -203,9 +203,11 @@ export function loadScript(source, { presets = ["[High Quality Print]", "[Press 
         ["indexOf","lastIndexOf","forEach","map","filter","reduce","some","every"].forEach(function (k) { delete Array.prototype[k]; });
         delete String.prototype.trim; delete Function.prototype.bind; delete Date.now;
     `, context);
-    const code = source.replace(/^#targetengine[^\n]*/, "");      // an ExtendScript directive
-    vm.runInContext(code, context, { filename: "SizeSortedExport.jsx" });
-    return { ns: context.SizeSortedExport, context, app, calls, original, unreadable, File, Folder };
+    // Runs a script in this InDesign session, like double-clicking it in the Scripts panel.
+    // (#targetengine keeps one engine per session, so a second run sees what the first one left.)
+    const run = (src) => vm.runInContext(src.replace(/^#targetengine[^\n]*/, ""), context, { filename: "SizeSortedExport.jsx" });
+    run(source);
+    return { ns: context.SizeSortedExport, context, app, calls, original, unreadable, File, Folder, run };
 }
 
 export const A4 = { width: 210 / MM, height: 297 / MM };
