@@ -31,6 +31,13 @@ These are the owner's standing rules for this project. Every AI that works here 
 
 `REVIEW.md` is a hand-over note between Codex and Claude. It isn't saved in the history (it's in `.gitignore`).
 
+## Superpowers (Codex's working method)
+The owner installed Superpowers (obra/superpowers, MIT, from the official Codex plugin list) so Codex plans, tests first and checks its own work. Use its skills, but where they clash with this file, this file wins:
+- **No separate copies or branches.** Skip `using-git-worktrees`, and skip `finishing-a-development-branch`'s branch, merge and pull-request steps. "Finished" here means: tests pass, a checkpoint is saved on `main` in this folder, and the work is handed to Claude.
+- **Claude's review is still required.** Superpowers' own code review and checks are extra, not a replacement.
+- **Plans and designs** go where Superpowers puts them (`docs/superpowers/`) and are saved in the checkpoint with the code, so Claude can review the code against them.
+- **The brainstorming "visual companion"** may only run on this PC (`127.0.0.1`, its default). Never start it with `--host 0.0.0.0`.
+
 ## How we choose tools
 - **Don't build what already exists.** Look to the community first.
 - **Free over paid.**

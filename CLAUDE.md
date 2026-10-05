@@ -9,7 +9,7 @@ Codex writes the code and you review it. Don't write or change code yourself: an
 ## When the owner says "review"
 1. **Find what to review:** everything on `main` since the `approved` branch (`git log approved..main`, `git diff approved..main`). If `approved..main` is empty, tell the owner there's nothing new from Codex to review.
 2. **Look for work that would otherwise be missed:** changes Codex hasn't saved yet (`git status`), other branches (`git branch -a`) and other copies (`git worktree list`). If you find any, tell the owner. Unreviewed work must never go unnoticed.
-3. **Read every changed file in full**, not only the changed lines.
+3. **Read every changed file in full**, not only the changed lines. If Codex wrote a plan or design for it (in `docs/superpowers/`), check the code does what the plan says.
 4. **Run the tests** from AGENTS.md for every part that changed, here on the export PC. Write down which ones you ran and which you couldn't run.
 5. **Check the change against the rules:** protected folders untouched, office network only, official sources, exact versions, no silent failures, upgrades cleanly over what's installed, keeps the notification link, as simple as possible.
 6. **List the gaps:** ways it could fail silently, miss an event or give a wrong answer.

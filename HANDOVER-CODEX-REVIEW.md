@@ -72,7 +72,16 @@ Show him this, and offer to save it as `Codex and Claude - how to.txt` on the De
 > 4. When Claude says *approved*: **in Claude**, type **install it**, and click **Yes** if Windows asks.
 >
 > If you use Cowork instead of the Code tab, start with: *"Read CLAUDE.md in the project folder first."*
+> If Codex asks where a new chat should run, pick the option that works in your own folder on this PC (usually **Local**), not Worktree or Cloud.
 > In Codex, keep the normal mode where it asks before doing anything outside the project folder. Don't choose **Full access**: this PC holds every client's files.
+
+### Step 7b: Superpowers in Codex
+The owner wants Superpowers (obra/superpowers) in Codex. Codex's plugins are installed inside the Codex app, so give the owner these steps, one at a time:
+1. In the Codex app, click **Plugins** in the sidebar.
+2. Find **Superpowers** in the **Coding** section and click the **+** next to it. Follow the prompts.
+3. In a new Codex chat in the project folder, type: *"Do you have Superpowers? List its skills, then read AGENTS.md and tell me what it says about Superpowers."*
+
+It works if Codex lists skills such as brainstorming, writing-plans, test-driven-development and verification-before-completion, and says it will work on `main` with no separate worktree. If it doesn't, tell the owner. Never let Superpowers seem active when it isn't.
 
 ### Step 8: Test the whole loop once
 Ask Codex, through the owner, for a tiny harmless change: for example, one line in a README. Then run the loop once from start to finish: review, approve, back up. Skip the install for a README-only change. That proves the hand-over works before real work goes through it.
